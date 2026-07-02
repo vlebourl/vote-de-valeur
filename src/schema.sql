@@ -72,3 +72,14 @@ CREATE TABLE IF NOT EXISTS ballot_scores (
   PRIMARY KEY (ballot_id, option_id)
 );
 CREATE INDEX IF NOT EXISTS idx_scores_option ON ballot_scores(option_id);
+
+-- === Scrutin nominatif (option par vote) ===
+-- Par défaut, le vote est SECRET : l'email n'est stocké que haché (email_hash)
+-- et aucun lien n'existe entre un votant et son bulletin.
+-- Si un scrutin est marqué nominatif, on stocke en plus l'email/nom en clair
+-- et on relie chaque bulletin déposé à son votant (dé-anonymisation assumée).
+ALTER TABLE polls        ADD COLUMN IF NOT EXISTS is_nominative BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS email        TEXT;   -- en clair, uniquement si nominatif
+ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS display_name TEXT;   -- nom optionnel, uniquement si nominatif
+ALTER TABLE ballots      ADD COLUMN IF NOT EXISTS voter_id     UUID REFERENCES poll_voters(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_ballots_voter ON ballots(voter_id);

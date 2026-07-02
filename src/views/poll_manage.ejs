@@ -77,10 +77,75 @@
 </div>
 
 <div class="card">
+  <h2 style="margin-top:0">Confidentialité</h2>
+  <p style="margin-top:0">
+    Ce scrutin est actuellement
+    <% if (poll.is_nominative) { %><strong style="color:#b45309">nominatif</strong> — les votes ne sont pas secrets, les identités et votes individuels sont visibles ci-dessous.
+    <% } else { %><strong>secret</strong> — aucun lien n'existe entre les votants et leurs bulletins.<% } %>
+  </p>
+  <form method="post" action="/polls/<%= poll.id %>/nominative">
+    <% if (poll.is_nominative) { %>
+      <input type="hidden" name="nominative" value="off">
+      <button class="btn btn-sm btn-ghost" type="submit" onsubmit="return confirm('Repasser en vote secret ? Les identités ne seront plus affichées.')">Repasser en vote secret</button>
+    <% } else { %>
+      <input type="hidden" name="nominative" value="on">
+      <button class="btn btn-sm btn-ghost" type="submit">Passer en scrutin nominatif</button>
+    <% } %>
+  </form>
+  <p class="field-hint">Passer en nominatif ne dé-anonymise pas les votes déjà déposés (ils restent secrets) : seuls les votes suivants seront identifiables, et les votants en sont informés sur le bulletin.</p>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0">Participation</h2>
   <p><strong><%= voterStats.voted %></strong> vote<%= voterStats.voted > 1 ? 's' : '' %> exprimé<%= voterStats.voted > 1 ? 's' : '' %>
      · <%= voterStats.invited %> personne<%= voterStats.invited > 1 ? 's' : '' %> ayant demandé un lien.</p>
 </div>
+
+<% if (poll.is_nominative) { %>
+<div class="card">
+  <h2 style="margin-top:0">Participants <span class="muted" style="font-size:14px">(scrutin nominatif)</span></h2>
+  <% if (!participants || participants.length === 0) { %>
+    <p class="muted">Personne n'a encore demandé de lien de vote.</p>
+  <% } else { %>
+    <div style="overflow-x:auto">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Participant</th>
+            <th>Statut</th>
+            <% options.forEach(function (o) { %>
+              <th style="text-align:center;min-width:56px"><%= o.label ? o.label : '(image)' %></th>
+            <% }) %>
+          </tr>
+        </thead>
+        <tbody>
+          <% participants.forEach(function (p) { %>
+            <tr>
+              <td>
+                <% if (p.name) { %><strong><%= p.name %></strong><br><% } %>
+                <span class="muted" style="font-size:13px"><%= p.email || '—' %></span>
+              </td>
+              <td>
+                <% if (!p.voted) { %><span class="badge badge-closed">pas voté</span>
+                <% } else if (p.anonymous) { %><span class="badge badge-private">voté (anonyme)</span>
+                <% } else { %><span class="badge badge-open">voté</span><% } %>
+              </td>
+              <% options.forEach(function (o) { %>
+                <td style="text-align:center">
+                  <% if (p.scores && Object.prototype.hasOwnProperty.call(p.scores, o.id)) { var s = p.scores[o.id]; %>
+                    <span class="total <%= s > 0 ? 'pos' : (s < 0 ? 'neg' : '') %>"><%= s > 0 ? '+' + s : s %></span>
+                  <% } else { %><span class="muted">—</span><% } %>
+                </td>
+              <% }) %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="field-hint" style="margin-top:10px">Notes de −2 à +2 (0 = neutre). « — » : option ajoutée après le vote de la personne. « voté (anonyme) » : bulletin déposé avant le passage en nominatif, non ré-associable.</p>
+  <% } %>
+</div>
+<% } %>
 
 <div class="card">
   <h2 style="margin-top:0">Résultats <span class="muted" style="font-size:14px">(en tant que créateur, visibles à tout moment)</span></h2>

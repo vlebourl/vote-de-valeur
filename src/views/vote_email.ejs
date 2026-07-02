@@ -13,13 +13,26 @@
 <% } else { %>
   <div class="card" style="max-width:480px">
     <% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+    <% if (poll.is_nominative) { %>
+      <div class="error" style="background:#fffbeb;border-color:#fde68a;color:#b45309">
+        <strong>Scrutin nominatif.</strong> Votre nom et votre vote seront visibles par l'organisateur : ce n'est pas un vote secret.
+      </div>
+    <% } %>
     <p>Pour voter, indiquez votre email. Vous recevrez un lien personnel donnant accès au bulletin. <strong>Un email = un vote.</strong></p>
     <form method="post" action="/vote/<%= poll.id %>/request">
+      <% if (poll.is_nominative) { %>
+        <label for="name">Votre nom (optionnel)</label>
+        <input type="text" id="name" name="name" maxlength="120" placeholder="Prénom Nom">
+      <% } %>
       <label for="email">Votre email</label>
-      <input type="email" id="email" name="email" required autofocus placeholder="vous@exemple.fr">
+      <input type="email" id="email" name="email" required <%= poll.is_nominative ? '' : 'autofocus' %> placeholder="vous@exemple.fr">
       <div style="margin-top:18px"><button class="btn" type="submit">Recevoir mon lien de vote</button></div>
     </form>
-    <p class="field-hint">Votre email sert uniquement à garantir l'unicité du vote. Il n'est pas associé à votre bulletin (vote secret).</p>
+    <% if (poll.is_nominative) { %>
+      <p class="field-hint">Scrutin nominatif : votre email et votre nom identifient votre bulletin auprès de l'organisateur.</p>
+    <% } else { %>
+      <p class="field-hint">Votre email sert uniquement à garantir l'unicité du vote. Il n'est pas associé à votre bulletin (vote secret).</p>
+    <% } %>
   </div>
 <% } %>
 <%- include('partials/footer') %>

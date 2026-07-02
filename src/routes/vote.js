@@ -68,8 +68,11 @@ router.post('/vote/:id/request', async (req, res) => {
     return res.status(400).render('vote_email', { poll, closed: false, sent: false, error: 'Email invalide.' });
   }
   const emailHash = hashEmail(email);
+  const name = String(req.body.name || '').trim().slice(0, 120);
 
   // Récupère ou crée le votant, en réutilisant son jeton s'il existe déjà.
+  // En scrutin nominatif, on conserve l'email et le nom en clair (vote non secret) ;
+  // sinon on ne stocke que le hachage (secret du bulletin préservé).
   let token;
   const existing = await query(
     'SELECT magic_token FROM poll_voters WHERE poll_id = $1 AND email_hash = $2',
@@ -77,11 +80,17 @@ router.post('/vote/:id/request', async (req, res) => {
   );
   if (existing.rows[0]) {
     token = existing.rows[0].magic_token;
+    if (poll.is_nominative) {
+      await query(
+        'UPDATE poll_voters SET email = $1, display_name = $2 WHERE poll_id = $3 AND email_hash = $4',
+        [email, name || null, poll.id, emailHash]
+      );
+    }
   } else {
     token = nanoid(32);
     await query(
-      'INSERT INTO poll_voters (poll_id, email_hash, magic_token) VALUES ($1,$2,$3)',
-      [poll.id, emailHash, token]
+      'INSERT INTO poll_voters (poll_id, email_hash, magic_token, email, display_name) VALUES ($1,$2,$3,$4,$5)',
+      [poll.id, emailHash, token, poll.is_nominative ? email : null, poll.is_nominative ? (name || null) : null]
     );
   }
 
@@ -147,7 +156,8 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
 
   await tx(async (client) => {
     const b = await client.query(
-      'INSERT INTO ballots (poll_id) VALUES ($1) RETURNING id', [poll.id]
+      'INSERT INTO ballots (poll_id, voter_id) VALUES ($1,$2) RETURNING id',
+      [poll.id, poll.is_nominative ? voter.id : null]
     );
     const ballotId = b.rows[0].id;
     for (const opt of options) {

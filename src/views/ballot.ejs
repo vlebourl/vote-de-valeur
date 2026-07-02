@@ -1,6 +1,11 @@
 <%- include('partials/header', { pageTitle: poll.title }) %>
 <h1><%= poll.title %></h1>
 <% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
+<% if (poll.is_nominative) { %>
+  <div class="error" style="background:#fffbeb;border-color:#fde68a;color:#b45309">
+    <strong>Scrutin nominatif.</strong> Votre vote sera visible par l'organisateur, associé à votre identité.
+  </div>
+<% } %>
 <p>Attribuez une note à <strong>chaque option</strong>, de −2 (rejet) à +2 (soutien fort). 0 = neutre / sans avis.</p>
 
 <form method="post" action="/vote/<%= poll.id %>/ballot/<%= token %>">

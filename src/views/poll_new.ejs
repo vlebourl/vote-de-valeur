@@ -30,6 +30,12 @@
       <div class="field-hint">Les votants devront saisir ce mot de passe pour accéder au bulletin. 4 caractères min.</div>
     </div>
 
+    <div class="checkbox-row" style="margin-top:10px">
+      <input type="checkbox" id="is_nominative" name="is_nominative">
+      <label for="is_nominative">Scrutin nominatif (les votes ne sont pas secrets)</label>
+    </div>
+    <div class="field-hint">Vous verrez qui a voté et le détail de chaque bulletin (email, nom, notes). Les votants en sont informés sur le formulaire. Par défaut, le vote est secret.</div>
+
     <label for="close_at">Date de clôture (optionnelle)</label>
     <input type="datetime-local" id="close_at" name="close_at">
     <div class="field-hint">Passé cette date, plus aucun vote n'est accepté.</div>

@@ -72,6 +72,7 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
   const title = String(req.body.title || '').trim();
   const description = String(req.body.description || '').trim();
   const isPrivate = req.body.is_private === 'on';
+  const isNominative = req.body.is_nominative === 'on';
   const password = String(req.body.password || '');
   const closeAtRaw = String(req.body.close_at || '').trim();
 
@@ -111,9 +112,9 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
 
   const pollId = await tx(async (client) => {
     const { rows } = await client.query(
-      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [req.user.id, title, description, isPrivate, passwordHash, closeAt]
+      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [req.user.id, title, description, isPrivate, passwordHash, closeAt, isNominative]
     );
     const id = rows[0].id;
     for (let i = 0; i < options.length; i++) {
@@ -158,13 +159,56 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
        FROM poll_voters WHERE poll_id = $1`, [poll.id]
   );
 
+  // Détail nominatif des participants (uniquement pour un scrutin nominatif) :
+  // identité en clair + notes de leur bulletin lié. Les votants enregistrés avant
+  // le passage en nominatif restent anonymes (email/nom nuls, bulletin non lié).
+  let participants = null;
+  if (poll.is_nominative) {
+    const { rows: voters } = await query(
+      `SELECT pv.email, pv.display_name, pv.voted_at, b.id AS ballot_id
+         FROM poll_voters pv
+         LEFT JOIN ballots b ON b.voter_id = pv.id
+        WHERE pv.poll_id = $1
+        ORDER BY (pv.voted_at IS NULL), pv.display_name NULLS LAST, pv.email NULLS LAST, pv.created_at`,
+      [poll.id]
+    );
+    const ballotIds = voters.filter((v) => v.ballot_id).map((v) => v.ballot_id);
+    const scoresByBallot = {};
+    if (ballotIds.length) {
+      const { rows: sc } = await query(
+        'SELECT ballot_id, option_id, score FROM ballot_scores WHERE ballot_id = ANY($1)',
+        [ballotIds]
+      );
+      for (const r of sc) (scoresByBallot[r.ballot_id] ||= {})[r.option_id] = r.score;
+    }
+    participants = voters.map((v) => ({
+      email: v.email,
+      name: v.display_name,
+      voted: !!v.voted_at,
+      anonymous: !!v.voted_at && !v.ballot_id, // a voté avant le passage en nominatif
+      scores: v.ballot_id ? (scoresByBallot[v.ballot_id] || {}) : null,
+    }));
+  }
+
   res.render('poll_manage', {
-    poll, options, results, ballotCount,
+    poll, options, results, ballotCount, participants,
     voterStats: voterStats[0],
     baseUrl: process.env.BASE_URL || '',
     notice: req.query.ok || null,
     error: req.query.err || null,
   });
+});
+
+// Basculer le scrutin en nominatif / secret
+router.post('/polls/:id/nominative', requireAuth, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const on = req.body.nominative === 'on';
+  await query('UPDATE polls SET is_nominative = $1 WHERE id = $2', [on, poll.id]);
+  const msg = on
+    ? 'Scrutin passé en nominatif. Les votes déposés à partir de maintenant sont identifiables ; ceux déjà déposés restent anonymes.'
+    : 'Scrutin repassé en vote secret. Les identités et votes individuels ne sont plus affichés.';
+  res.redirect(`/polls/${poll.id}/manage?ok=${encodeURIComponent(msg)}`);
 });
 
 // Édition du titre et de la description (à tout moment)
