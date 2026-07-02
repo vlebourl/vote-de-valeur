@@ -148,14 +148,24 @@
 </div>
 <% } %>
 
+<% var pollClosed = poll.status !== 'open' || (poll.close_at && new Date(poll.close_at) <= new Date()); %>
 <div class="card">
-  <h2 style="margin-top:0">Résultats <span class="muted" style="font-size:14px">(en tant que créateur, visibles à tout moment)</span></h2>
-  <% if (ballotCount === 0) { %>
-    <p class="muted">Aucun bulletin pour l'instant.</p>
-  <% } else { %>
-    <%- include('partials/results_table', { options: results, ballotCount: ballotCount }) %>
-  <% } %>
+  <div class="row-actions" style="justify-content:space-between">
+    <h2 style="margin:0">Résultats <span class="muted" style="font-size:14px">(créateur · visibles à tout moment)</span></h2>
+    <% if (!pollClosed) { %><span class="live-pill"><i></i>En direct</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
+  </div>
+  <div id="manage-results" style="margin-top:16px">
+    <% if (ballotCount === 0) { %>
+      <p class="muted">Aucun bulletin pour l'instant.</p>
+    <% } else { %>
+      <%- include('partials/results_table', { options: results, ballotCount: ballotCount }) %>
+    <% } %>
+  </div>
 </div>
+<% if (!pollClosed && ballotCount > 0) { %>
+<script src="/results.js"></script>
+<script>vvStartLive({ url: '/polls/' + <%- JSON.stringify(poll.id) %> + '/results.json', containerId: 'manage-results' });</script>
+<% } %>
 
 <div class="card">
   <h2 style="margin-top:0">Administration</h2>

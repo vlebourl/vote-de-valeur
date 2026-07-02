@@ -199,6 +199,14 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
   });
 });
 
+// Résultats JSON pour le rafraîchissement en direct de la page de gestion (propriétaire)
+router.get('/polls/:id/results.json', requireAuth, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const { options, ballotCount } = await computeResults(poll.id);
+  res.json({ options, ballotCount });
+});
+
 // Basculer le scrutin en nominatif / secret
 router.post('/polls/:id/nominative', requireAuth, async (req, res) => {
   const poll = await loadOwnedPoll(req, res);
