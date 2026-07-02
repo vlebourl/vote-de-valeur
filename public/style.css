@@ -137,11 +137,7 @@ table.results th { font-size: 13px; text-transform: uppercase; letter-spacing: .
 .total { font-weight: 700; }
 .total.neg { color: var(--neg); } .total.pos { color: var(--pos); }
 
-/* Résultats en cartes (maquette) */
-.winner { background: var(--indigo-tint); border: 1px solid #dfe2fb; border-radius: var(--radius); padding: 18px; margin-bottom: 16px; text-align: center; }
-.winner-label { font-size: 12px; font-weight: 700; color: var(--indigo); text-transform: uppercase; letter-spacing: .05em; }
-.winner-name { font-size: 22px; font-weight: 800; margin-top: 6px; letter-spacing: -.01em; }
-.winner-score { font-size: 15px; font-weight: 800; margin-top: 4px; }
+/* Résultats : liste complète classée + jauge */
 .res-list { display: flex; flex-direction: column; gap: 14px; }
 .res-row { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px; }
 .res-head { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; }
@@ -150,8 +146,7 @@ table.results th { font-size: 13px; text-transform: uppercase; letter-spacing: .
 .res-name { font-size: 16px; font-weight: 700; }
 .res-desc { font-size: 13px; }
 .res-score { font-size: 19px; font-weight: 800; }
-.res-row.is-winner { background: var(--indigo-tint); border-color: #dfe2fb; }
-.res-thumb { width: 64px; height: 64px; border-radius: 10px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
+.res-thumb { width: 72px; height: 72px; border-radius: 10px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
 /* Jauge bidirectionnelle centrée sur 0 : vert à droite (soutien), rouge à gauche (rejet) */
 .gauge { position: relative; height: 22px; background: #f1f2f6; border-radius: 100px; overflow: hidden; }
 .gauge-fill { position: absolute; top: 0; bottom: 0; }

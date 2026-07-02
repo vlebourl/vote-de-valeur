@@ -45,21 +45,14 @@
     const fmt = t => t > 0 ? '+' + t : String(t);
     const cls = t => t > 0 ? 'pos' : (t < 0 ? 'neg' : '');
     const half = t => (Math.abs(t) / maxAbs * 50).toFixed(1);
-    const winners = opts.filter(o => o.rank === 1);
-    let html = '';
-    if (winners.length) {
-      html += '<div class="winner"><div class="winner-label">Choix retenu' + (winners.length > 1 ? ' (ex æquo)' : '') + '</div>' +
-              '<div class="winner-name">' + winners.map(w => escapeHtml(w.label || '(image)')).join(' · ') + '</div>' +
-              '<div class="winner-score total ' + cls(winners[0].total) + '">' + fmt(winners[0].total) + '</div></div>';
-    }
-    html += '<div class="res-list">';
+    let html = '<div class="res-list">';
     for (const o of opts) {
       const thumb = o.has_image ? '<img class="res-thumb" src="/options/' + o.id + '/image" alt="">' : '';
       const tie = rankCount[o.rank] > 1 ? '<span class="tie">ex æquo</span>' : '';
       const desc = o.description ? '<div class="muted res-desc">' + escapeHtml(o.description) + '</div>' : '';
       const name = o.label ? escapeHtml(o.label) : '(image)';
       const gcls = o.total < 0 ? 'neg' : 'pos';
-      html += '<div class="res-row' + (o.rank === 1 ? ' is-winner' : '') + '"><div class="res-head">' +
+      html += '<div class="res-row"><div class="res-head">' +
                 '<span class="res-rank">' + o.rank + '</span>' +
                 '<div class="res-main">' + thumb + '<div><div class="res-name">' + name + tie + '</div>' + desc + '</div></div>' +
                 '<span class="res-score total ' + cls(o.total) + '">' + fmt(o.total) + '</span>' +

@@ -3,22 +3,13 @@
   options.forEach(function (o) { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
   var rankCount = {};
   options.forEach(function (o) { rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
-  var winners = options.filter(function (o) { return o.rank === 1; });
-  var rest = options.filter(function (o) { return o.rank !== 1; });
   function half(o) { return (Math.abs(o.total) / maxAbs * 50).toFixed(1); } // demi-largeur de la jauge
   function fmt(t) { return t > 0 ? '+' + t : String(t); }
   function scoreCls(t) { return t > 0 ? 'pos' : (t < 0 ? 'neg' : ''); }
 %>
-<% if (winners.length) { %>
-  <div class="winner">
-    <div class="winner-label">Choix retenu<%= winners.length > 1 ? ' (ex æquo)' : '' %></div>
-    <div class="winner-name"><%= winners.map(function (w) { return w.label || '(image)'; }).join(' · ') %></div>
-    <div class="winner-score total <%= scoreCls(winners[0].total) %>"><%= fmt(winners[0].total) %></div>
-  </div>
-<% } %>
 <div class="res-list">
   <% options.forEach(function (o) { %>
-    <div class="res-row<%= o.rank === 1 ? ' is-winner' : '' %>">
+    <div class="res-row">
       <div class="res-head">
         <span class="res-rank"><%= o.rank %></span>
         <div class="res-main">
