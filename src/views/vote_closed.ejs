@@ -1,0 +1,8 @@
+<%- include('partials/header', { pageTitle: poll.title }) %>
+<h1><%= poll.title %></h1>
+<div class="card">
+  <p>Ce vote est <strong>clôturé</strong>.
+  <% if (!voted) { %> Vous n'avez pas voté avant la clôture, les résultats ne vous sont donc pas accessibles.<% } %></p>
+  <a class="btn btn-ghost" href="/">Accueil</a>
+</div>
+<%- include('partials/footer') %>

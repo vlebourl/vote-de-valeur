@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Vote de valeur' %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">◈ Vote de valeur</a>
+    <nav>
+      <% if (user) { %>
+        <a href="/dashboard">Mes votes</a>
+        <form method="post" action="/logout" class="inline">
+          <button class="link" type="submit">Se déconnecter</button>
+        </form>
+      <% } else { %>
+        <a href="/login">Connexion</a>
+        <a class="btn btn-sm" href="/register">Créer un compte</a>
+      <% } %>
+    </nav>
+  </header>
+  <main class="container">

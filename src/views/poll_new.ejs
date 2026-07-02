@@ -1,0 +1,82 @@
+<%- include('partials/header', { pageTitle: 'Nouveau vote' }) %>
+<h1>Créer un vote</h1>
+<% if (error) { %><div class="error"><%= error %></div><% } %>
+
+<form method="post" action="/polls" enctype="multipart/form-data">
+  <div class="card">
+    <label for="title">Sujet du vote</label>
+    <input type="text" id="title" name="title" placeholder="Ex : Où organiser le séminaire ?" required autofocus>
+
+    <label for="description">Description (optionnelle)</label>
+    <textarea id="description" name="description" placeholder="Contexte, consignes…"></textarea>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Options</h2>
+    <p class="muted">Chaque votant notera chacune de ces options de −2 à +2. Chaque option peut avoir une <strong>image</strong>, un <strong>intitulé</strong>, ou les deux.</p>
+    <div id="options"></div>
+    <button type="button" class="btn btn-sm btn-ghost" id="add-option">+ Ajouter une option</button>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Accès & clôture</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="is_private" name="is_private">
+      <label for="is_private">Vote privé (protégé par mot de passe)</label>
+    </div>
+    <div id="pwd-field" style="display:none">
+      <label for="password">Mot de passe d'accès</label>
+      <input type="text" name="password" placeholder="Communiqué aux votants avec le lien">
+      <div class="field-hint">Les votants devront saisir ce mot de passe pour accéder au bulletin. 4 caractères min.</div>
+    </div>
+
+    <label for="close_at">Date de clôture (optionnelle)</label>
+    <input type="datetime-local" id="close_at" name="close_at">
+    <div class="field-hint">Passé cette date, plus aucun vote n'est accepté.</div>
+  </div>
+
+  <button class="btn" type="submit">Créer le vote</button>
+</form>
+
+<script>
+  let optIdx = 0;
+  const placeholders = ['Ex : Lyon', 'Ex : Marseille', 'Ex : Bordeaux', 'Nouvelle option'];
+
+  function addOption() {
+    const i = optIdx++;
+    const ph = placeholders[Math.min(i, placeholders.length - 1)];
+    const block = document.createElement('div');
+    block.className = 'option-block option-item';
+    block.innerHTML =
+      '<div class="opt-head">' +
+        '<label style="margin-top:0">Intitulé (optionnel si image)</label>' +
+        '<button type="button" class="link remove-option" style="color:#dc2626">Supprimer</button>' +
+      '</div>' +
+      '<input type="text" name="option_label_' + i + '" placeholder="' + ph + '">' +
+      '<label>Description (optionnelle)</label>' +
+      '<input type="text" name="option_desc_' + i + '" placeholder="Précisions…">' +
+      '<label>Image (optionnelle, 3 Mo max)</label>' +
+      '<input type="file" name="option_image_' + i + '" accept="image/png,image/jpeg,image/webp,image/gif" class="opt-image">' +
+      '<img class="opt-preview" alt="" style="display:none;max-width:160px;max-height:120px;margin-top:8px;border-radius:8px;border:1px solid var(--border)">';
+    document.getElementById('options').appendChild(block);
+  }
+
+  document.getElementById('add-option').addEventListener('click', addOption);
+  document.getElementById('options').addEventListener('click', function (e) {
+    if (e.target.classList.contains('remove-option')) e.target.closest('.option-item').remove();
+  });
+  document.getElementById('options').addEventListener('change', function (e) {
+    if (e.target.classList.contains('opt-image')) {
+      const img = e.target.parentElement.querySelector('.opt-preview');
+      const file = e.target.files[0];
+      if (file) { img.src = URL.createObjectURL(file); img.style.display = 'block'; }
+      else { img.style.display = 'none'; }
+    }
+  });
+  document.getElementById('is_private').addEventListener('change', function (e) {
+    document.getElementById('pwd-field').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  addOption(); addOption(); // deux options par défaut
+</script>
+<%- include('partials/footer') %>

@@ -1,0 +1,25 @@
+<%- include('partials/header', { pageTitle: poll.title }) %>
+<h1><%= poll.title %></h1>
+<% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
+
+<% if (closed) { %>
+  <div class="card"><p>Ce vote est <strong>clôturé</strong>. Il n'est plus possible d'y participer.</p></div>
+<% } else if (sent) { %>
+  <div class="card">
+    <div class="notice">Un lien de vote personnel vient d'être envoyé par email.</div>
+    <p>Ouvrez votre boîte mail et cliquez sur le lien pour accéder au bulletin. Le lien est unique et ne fonctionne que pour vous.</p>
+    <p class="field-hint">Vous ne recevez rien ? Vérifiez vos spams, ou <a href="/vote/<%= poll.id %>">réessayez</a>.</p>
+  </div>
+<% } else { %>
+  <div class="card" style="max-width:480px">
+    <% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+    <p>Pour voter, indiquez votre email. Vous recevrez un lien personnel donnant accès au bulletin. <strong>Un email = un vote.</strong></p>
+    <form method="post" action="/vote/<%= poll.id %>/request">
+      <label for="email">Votre email</label>
+      <input type="email" id="email" name="email" required autofocus placeholder="vous@exemple.fr">
+      <div style="margin-top:18px"><button class="btn" type="submit">Recevoir mon lien de vote</button></div>
+    </form>
+    <p class="field-hint">Votre email sert uniquement à garantir l'unicité du vote. Il n'est pas associé à votre bulletin (vote secret).</p>
+  </div>
+<% } %>
+<%- include('partials/footer') %>

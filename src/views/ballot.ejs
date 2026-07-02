@@ -1,0 +1,24 @@
+<%- include('partials/header', { pageTitle: poll.title }) %>
+<h1><%= poll.title %></h1>
+<% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
+<p>Attribuez une note à <strong>chaque option</strong>, de −2 (rejet) à +2 (soutien fort). 0 = neutre / sans avis.</p>
+
+<form method="post" action="/vote/<%= poll.id %>/ballot/<%= token %>">
+  <% options.forEach(function (o) { %>
+    <div class="option-block">
+      <% if (o.has_image) { %><img class="opt-vote-img" src="/options/<%= o.id %>/image" alt="<%= o.label %>"><% } %>
+      <% if (o.label) { %><h3><%= o.label %></h3><% } %>
+      <% if (o.description) { %><p class="muted" style="margin:0 0 4px"><%= o.description %></p><% } %>
+      <div class="rating">
+        <% [-2,-1,0,1,2].forEach(function (v) {
+             var id = 'opt_' + o.id + '_' + (v<0 ? 'm'+(-v) : v); %>
+          <input type="radio" id="<%= id %>" name="score_<%= o.id %>" value="<%= v %>" <%= v===0 ? 'checked' : '' %>>
+          <label for="<%= id %>"><%= v>0 ? '+'+v : v %></label>
+        <% }) %>
+      </div>
+    </div>
+  <% }) %>
+  <button class="btn" type="submit">Valider mon vote</button>
+  <p class="field-hint">Attention : votre vote est <strong>définitif</strong> et ne pourra pas être modifié.</p>
+</form>
+<%- include('partials/footer') %>

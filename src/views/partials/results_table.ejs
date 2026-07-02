@@ -1,0 +1,30 @@
+<%
+  var maxAbs = 1;
+  options.forEach(function (o) { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
+%>
+<table class="results">
+  <thead>
+    <tr><th class="rank">#</th><th>Option</th><th>Score (somme)</th><th style="width:38%">Répartition</th></tr>
+  </thead>
+  <tbody>
+    <% options.forEach(function (o) { %>
+      <tr>
+        <td class="rank"><%= o.rank %></td>
+        <td>
+          <div class="opt-cell">
+            <% if (o.has_image) { %><img class="opt-thumb" src="/options/<%= o.id %>/image" alt="<%= o.label %>"><% } %>
+            <div>
+              <% if (o.label) { %><strong><%= o.label %></strong><% } else { %><strong class="muted">(image)</strong><% } %>
+              <% if (o.description) { %><div class="muted" style="font-size:13px"><%= o.description %></div><% } %>
+            </div>
+          </div>
+        </td>
+        <td class="total <%= o.total > 0 ? 'pos' : (o.total < 0 ? 'neg' : '') %>"><%= o.total > 0 ? '+' + o.total : o.total %></td>
+        <td>
+          <div class="bar-wrap"><div class="bar" style="width: <%= Math.round(Math.abs(o.total) / maxAbs * 100) %>%; background: <%= o.total < 0 ? 'var(--neg)' : 'var(--indigo)' %>"></div></div>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<p class="muted" style="font-size:13px;margin-top:10px">Basé sur <%= ballotCount %> bulletin<%= ballotCount > 1 ? 's' : '' %>. Classement à la somme des notes (−2 à +2) ; abstention comptée comme 0. Les égalités partagent le même rang.</p>

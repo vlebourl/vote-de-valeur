@@ -1,0 +1,54 @@
+<%- include('partials/header', { pageTitle: poll.title }) %>
+<% const shareUrl = baseUrl.replace(/\/$/, '') + '/vote/' + poll.id; %>
+
+<div class="row-actions" style="justify-content:space-between">
+  <h1 style="margin-bottom:4px"><%= poll.title %></h1>
+  <a href="/dashboard" class="muted">← Mes votes</a>
+</div>
+<p>
+  <% if (poll.is_private) { %><span class="badge badge-private">privé</span> <% } %>
+  <% if (poll.status === 'open') { %><span class="badge badge-open">ouvert</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
+</p>
+<% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
+
+<div class="card">
+  <h2 style="margin-top:0">Partager</h2>
+  <p class="muted">Lien du vote à diffuser aux participants :</p>
+  <div class="share-box">
+    <input type="text" id="share" value="<%= shareUrl %>" readonly>
+    <button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('share').value)">Copier</button>
+  </div>
+  <% if (poll.is_private) { %>
+    <p class="field-hint">Vote privé : communiquez aussi le mot de passe aux participants (séparément du lien, de préférence).</p>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Participation</h2>
+  <p><strong><%= voterStats.voted %></strong> vote<%= voterStats.voted > 1 ? 's' : '' %> exprimé<%= voterStats.voted > 1 ? 's' : '' %>
+     · <%= voterStats.invited %> personne<%= voterStats.invited > 1 ? 's' : '' %> ayant demandé un lien.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Résultats <span class="muted" style="font-size:14px">(en tant que créateur, visibles à tout moment)</span></h2>
+  <% if (ballotCount === 0) { %>
+    <p class="muted">Aucun bulletin pour l'instant.</p>
+  <% } else { %>
+    <%- include('partials/results_table', { options: results, ballotCount: ballotCount }) %>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Administration</h2>
+  <div class="row-actions">
+    <% if (poll.status === 'open') { %>
+      <form method="post" action="/polls/<%= poll.id %>/status"><input type="hidden" name="status" value="closed"><button class="btn btn-sm btn-ghost" type="submit">Clôturer le vote</button></form>
+    <% } else { %>
+      <form method="post" action="/polls/<%= poll.id %>/status"><input type="hidden" name="status" value="open"><button class="btn btn-sm btn-ghost" type="submit">Rouvrir le vote</button></form>
+    <% } %>
+    <form method="post" action="/polls/<%= poll.id %>/delete" onsubmit="return confirm('Supprimer définitivement ce vote et tous ses bulletins ?')">
+      <button class="btn btn-sm btn-danger" type="submit">Supprimer</button>
+    </form>
+  </div>
+</div>
+<%- include('partials/footer') %>

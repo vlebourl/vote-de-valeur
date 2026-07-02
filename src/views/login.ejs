@@ -1,0 +1,15 @@
+<%- include('partials/header', { pageTitle: 'Connexion' }) %>
+<h1>Connexion</h1>
+<div class="card" style="max-width:440px">
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="<%= next %>">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" value="<%= email %>" required autofocus>
+    <label for="password">Mot de passe</label>
+    <input type="password" id="password" name="password" required>
+    <div style="margin-top:20px"><button class="btn" type="submit">Se connecter</button></div>
+  </form>
+  <p class="muted" style="margin-top:16px">Pas de compte ? <a href="/register">Créer un compte</a></p>
+</div>
+<%- include('partials/footer') %>

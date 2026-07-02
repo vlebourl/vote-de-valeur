@@ -1,0 +1,52 @@
+<%- include('partials/header', { pageTitle: 'Résultats — ' + poll.title }) %>
+<h1><%= poll.title %></h1>
+<div class="notice">Votre vote a bien été enregistré. Merci !</div>
+
+<div class="card">
+  <div class="row-actions" style="justify-content:space-between">
+    <h2 style="margin:0">Résultats en direct</h2>
+    <% if (!closed) { %><span class="muted" style="font-size:13px">↻ mise à jour automatique</span><% } else { %><span class="badge badge-closed">vote clos</span><% } %>
+  </div>
+  <div id="results-container" style="margin-top:14px">
+    <%- include('partials/results_table', { options: options, ballotCount: ballotCount }) %>
+  </div>
+</div>
+
+<% if (!closed) { %>
+<script>
+  const POLL_ID = <%- JSON.stringify(poll.id) %>;
+  const TOKEN = <%- JSON.stringify(token) %>;
+  async function refresh() {
+    try {
+      const r = await fetch('/api/polls/' + POLL_ID + '/results?token=' + encodeURIComponent(TOKEN));
+      if (!r.ok) return;
+      const data = await r.json();
+      renderResults(data);
+    } catch (e) { /* silencieux */ }
+  }
+  function renderResults(data) {
+    const opts = data.options;
+    let maxAbs = 1;
+    opts.forEach(o => { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
+    let html = '<table class="results"><thead><tr><th class="rank">#</th><th>Option</th><th>Score (somme)</th><th style="width:38%">Répartition</th></tr></thead><tbody>';
+    for (const o of opts) {
+      const cls = o.total > 0 ? 'pos' : (o.total < 0 ? 'neg' : '');
+      const val = o.total > 0 ? '+' + o.total : o.total;
+      const w = Math.round(Math.abs(o.total) / maxAbs * 100);
+      const color = o.total < 0 ? 'var(--neg)' : 'var(--indigo)';
+      const desc = o.description ? '<div class="muted" style="font-size:13px">' + escapeHtml(o.description) + '</div>' : '';
+      const thumb = o.has_image ? '<img class="opt-thumb" src="/options/' + o.id + '/image" alt="">' : '';
+      const label = o.label ? '<strong>' + escapeHtml(o.label) + '</strong>' : '<strong class="muted">(image)</strong>';
+      html += '<tr><td class="rank">' + o.rank + '</td><td><div class="opt-cell">' + thumb + '<div>' + label + desc + '</div></div></td>' +
+              '<td class="total ' + cls + '">' + val + '</td>' +
+              '<td><div class="bar-wrap"><div class="bar" style="width:' + w + '%;background:' + color + '"></div></div></td></tr>';
+    }
+    html += '</tbody></table><p class="muted" style="font-size:13px;margin-top:10px">Basé sur ' + data.ballotCount +
+            ' bulletin' + (data.ballotCount > 1 ? 's' : '') + '. Classement à la somme des notes ; abstention = 0. Les égalités partagent le même rang.</p>';
+    document.getElementById('results-container').innerHTML = html;
+  }
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  setInterval(refresh, 5000);
+</script>
+<% } %>
+<%- include('partials/footer') %>

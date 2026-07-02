@@ -1,0 +1,26 @@
+<%- include('partials/header', { pageTitle: 'Mes votes' }) %>
+<div class="row-actions" style="justify-content:space-between">
+  <h1>Mes votes</h1>
+  <a class="btn" href="/polls/new">+ Nouveau vote</a>
+</div>
+
+<% if (polls.length === 0) { %>
+  <div class="card"><p class="muted">Vous n'avez pas encore créé de vote. <a href="/polls/new">Créez le premier</a>.</p></div>
+<% } else { %>
+  <div class="card">
+    <% polls.forEach(function(p) { %>
+      <div class="poll-row">
+        <div>
+          <a href="/polls/<%= p.id %>/manage"><strong><%= p.title %></strong></a>
+          <div class="muted" style="font-size:13px">
+            <%= p.ballots %> bulletin<%= p.ballots > 1 ? 's' : '' %> ·
+            <% if (p.is_private) { %><span class="badge badge-private">privé</span> <% } %>
+            <% if (p.status === 'open') { %><span class="badge badge-open">ouvert</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
+          </div>
+        </div>
+        <a class="btn btn-sm btn-ghost" href="/polls/<%= p.id %>/manage">Gérer</a>
+      </div>
+    <% }) %>
+  </div>
+<% } %>
+<%- include('partials/footer') %>

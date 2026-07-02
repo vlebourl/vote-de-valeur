@@ -1,0 +1,37 @@
+<%- include('partials/header', { pageTitle: 'Vote de valeur — décidez ensemble, nuancez vos avis' }) %>
+
+<section class="hero">
+  <h1>Décidez ensemble, sans tout réduire à un seul choix.</h1>
+  <p class="lead">Le <strong>vote de valeur</strong> laisse chaque participant noter <em>toutes</em> les options proposées, de −2 à +2. On additionne les notes : l'option la mieux jugée l'emporte. Fini le « vote utile ».</p>
+  <div class="scale-demo">
+    <span class="scale-chip chip--2">−2 Contre</span>
+    <span class="scale-chip">−1</span>
+    <span class="scale-chip">0 Neutre</span>
+    <span class="scale-chip">+1</span>
+    <span class="scale-chip chip-2">+2 Pour</span>
+  </div>
+  <% if (user) { %>
+    <a class="btn" href="/polls/new">Créer un vote</a>
+    <a class="btn btn-ghost" href="/dashboard">Mes votes</a>
+  <% } else { %>
+    <a class="btn" href="/register">Créer un vote gratuitement</a>
+    <a class="btn btn-ghost" href="/login">J'ai déjà un compte</a>
+  <% } %>
+</section>
+
+<section style="margin-top:48px">
+  <h2>Comment ça marche</h2>
+  <div class="steps">
+    <div class="step"><span class="num">1</span><h3>Créez le vote</h3><p class="muted">Un sujet, plusieurs options. Public (lien) ou privé (lien + mot de passe).</p></div>
+    <div class="step"><span class="num">2</span><h3>Partagez</h3><p class="muted">Chaque vote a une URL unique. Les votants s'identifient par email : 1 email = 1 vote.</p></div>
+    <div class="step"><span class="num">3</span><h3>On note tout</h3><p class="muted">Chacun attribue une note de −2 à +2 à chaque option, selon son avis réel.</p></div>
+    <div class="step"><span class="num">4</span><h3>Résultat</h3><p class="muted">Classement à la somme des notes. Les égalités sont possibles et affichées telles quelles.</p></div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:40px">
+  <h2>Pourquoi le vote de valeur ?</h2>
+  <p>Avec un vote classique « une voix pour un candidat », un électeur ne peut exprimer qu'une préférence et se retrouve souvent à voter « contre » plutôt que « pour ». Le vote de valeur permet d'exprimer une <strong>opinion nuancée sur chaque option</strong> : soutien fort (+2), soutien (+1), indifférence (0), opposition (−1) ou rejet (−2). Le résultat reflète mieux l'adhésion collective réelle.</p>
+</section>
+
+<%- include('partials/footer') %>
