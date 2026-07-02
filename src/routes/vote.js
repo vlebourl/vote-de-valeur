@@ -174,7 +174,23 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
 });
 
-// --- Résultats (accessibles uniquement après avoir voté) ---
+// --- Résultats publics permanents (URL stable, partageable) ---
+// Les résultats sont agrégés et anonymes (jamais les votes individuels).
+// Un vote privé exige d'abord le mot de passe d'accès.
+router.get('/vote/:id/results', async (req, res) => {
+  const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
+  if (poll.is_private && !hasAccess(req, poll)) {
+    return res.render('vote_password', { poll, error: null });
+  }
+  const { options, ballotCount } = await computeResults(poll.id);
+  res.render('results', {
+    poll, options, ballotCount, token: null, closed: isClosed(poll),
+    justVoted: false, publicUrl: `${BASE_URL()}/vote/${poll.id}/results`,
+  });
+});
+
+// --- Résultats via lien magique (juste après avoir voté) ---
 router.get('/vote/:id/results/:token', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
@@ -185,25 +201,34 @@ router.get('/vote/:id/results/:token', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).render('error', { message: 'Lien invalide.' });
   if (!rows[0].voted_at) {
-    // N'a pas encore voté : interdit de voir les résultats.
+    // N'a pas encore voté : on l'envoie au bulletin.
     return res.redirect(`/vote/${poll.id}/ballot/${req.params.token}`);
   }
 
   const { options, ballotCount } = await computeResults(poll.id);
   res.render('results', {
     poll, options, ballotCount, token: req.params.token, closed: isClosed(poll),
+    justVoted: true, publicUrl: `${BASE_URL()}/vote/${poll.id}/results`,
   });
 });
 
 // --- Résultats JSON pour la mise à jour en temps réel ---
+// Autorisé si le vote est public, si l'accès privé est déverrouillé (cookie),
+// ou pour un votant ayant déjà voté (jeton).
 router.get('/api/polls/:id/results', async (req, res) => {
+  const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'not_found' });
   const token = String(req.query.token || '');
-  const { rows } = await query(
-    'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-    [req.params.id, token]
-  );
-  if (!rows[0] || !rows[0].voted_at) return res.status(403).json({ error: 'forbidden' });
-  const { options, ballotCount } = await computeResults(req.params.id);
+  let allowed = !poll.is_private || hasAccess(req, poll);
+  if (!allowed && token) {
+    const { rows } = await query(
+      'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
+      [poll.id, token]
+    );
+    allowed = !!(rows[0] && rows[0].voted_at);
+  }
+  if (!allowed) return res.status(403).json({ error: 'forbidden' });
+  const { options, ballotCount } = await computeResults(poll.id);
   res.json({ options, ballotCount });
 });
 

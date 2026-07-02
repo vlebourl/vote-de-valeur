@@ -52,7 +52,7 @@ async function loadOwnedPoll(req, res) {
 // Tableau de bord : liste des votes de l'utilisateur
 router.get('/dashboard', requireAuth, async (req, res) => {
   const { rows: polls } = await query(
-    `SELECT p.id, p.title, p.status, p.is_private, p.close_at, p.created_at,
+    `SELECT p.id, p.title, p.status, p.is_private, p.is_nominative, p.close_at, p.created_at,
             (SELECT COUNT(*) FROM ballots b WHERE b.poll_id = p.id)::int AS ballots
        FROM polls p
       WHERE p.owner_id = $1

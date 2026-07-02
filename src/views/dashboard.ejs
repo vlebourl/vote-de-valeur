@@ -1,4 +1,9 @@
 <%- include('partials/header', { pageTitle: 'Mes votes' }) %>
+<%
+  function ddmm(d) { if (!d) return null; var x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); }
+  var totalBallots = polls.reduce(function (s, p) { return s + (p.ballots || 0); }, 0);
+  var now = Date.now();
+%>
 <div class="row-actions" style="justify-content:space-between">
   <h1>Mes votes</h1>
   <a class="btn" href="/polls/new">+ Nouveau vote</a>
@@ -7,20 +12,29 @@
 <% if (polls.length === 0) { %>
   <div class="card"><p class="muted">Vous n'avez pas encore créé de vote. <a href="/polls/new">Créez le premier</a>.</p></div>
 <% } else { %>
-  <div class="card">
-    <% polls.forEach(function(p) { %>
-      <div class="poll-row">
-        <div>
-          <a href="/polls/<%= p.id %>/manage"><strong><%= p.title %></strong></a>
-          <div class="muted" style="font-size:13px">
-            <%= p.ballots %> bulletin<%= p.ballots > 1 ? 's' : '' %> ·
-            <% if (p.is_private) { %><span class="badge badge-private">privé</span> <% } %>
-            <% if (p.status === 'open') { %><span class="badge badge-open">ouvert</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
-          </div>
+  <div class="dash-stats">
+    <div class="stat-tile"><div class="stat-num"><%= polls.length %></div><div class="stat-label">vote<%= polls.length > 1 ? 's' : '' %></div></div>
+    <div class="stat-tile"><div class="stat-num"><%= totalBallots %></div><div class="stat-label">bulletin<%= totalBallots > 1 ? 's' : '' %> reçu<%= totalBallots > 1 ? 's' : '' %></div></div>
+  </div>
+  <div class="poll-cards">
+    <% polls.forEach(function (p) {
+         var closed = p.status !== 'open' || (p.close_at && new Date(p.close_at).getTime() <= now);
+         var d = ddmm(p.close_at);
+         var cloture = closed ? (d ? 'clos le ' + d : 'clos') : (d ? 'clôt le ' + d : 'sans clôture');
+    %>
+      <div class="poll-card <%= closed ? 'is-closed' : '' %>">
+        <div class="poll-card-badges">
+          <% if (closed) { %><span class="badge badge-closed">clos</span><% } else { %><span class="badge badge-open">ouvert</span><% } %>
+          <% if (p.is_private) { %><span class="badge badge-private">privé</span><% } %>
+          <% if (p.is_nominative) { %><span class="badge badge-private">nominatif</span><% } %>
         </div>
-        <a class="btn btn-sm btn-ghost" href="/polls/<%= p.id %>/manage">Gérer</a>
+        <div class="poll-card-title"><a href="/polls/<%= p.id %>/manage"><%= p.title %></a></div>
+        <div class="poll-card-foot">
+          <span class="poll-card-meta"><b><%= p.ballots %></b> bulletin<%= p.ballots > 1 ? 's' : '' %> · <%= cloture %></span>
+          <a class="btn-soft" href="/polls/<%= p.id %>/manage">Gérer</a>
+        </div>
       </div>
-    <% }) %>
+    <% }); %>
   </div>
 <% } %>
 <%- include('partials/footer') %>
