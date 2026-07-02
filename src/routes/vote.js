@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { nanoid } from 'nanoid';
 import { query, tx } from '../db.js';
 import { hashEmail, verifyPassword } from '../auth.js';
-import { sendMagicLink } from '../mailer.js';
+import { sendMagicLink, sendVoteConfirmation } from '../mailer.js';
 import { computeResults } from '../results.js';
 
 const router = Router();
@@ -78,19 +78,19 @@ router.post('/vote/:id/request', async (req, res) => {
     'SELECT magic_token FROM poll_voters WHERE poll_id = $1 AND email_hash = $2',
     [poll.id, emailHash]
   );
+  // On conserve l'email en clair pour pouvoir envoyer la confirmation de vote.
+  // Il n'est jamais relié au bulletin (le vote reste secret sauf scrutin nominatif).
   if (existing.rows[0]) {
     token = existing.rows[0].magic_token;
-    if (poll.is_nominative) {
-      await query(
-        'UPDATE poll_voters SET email = $1, display_name = $2 WHERE poll_id = $3 AND email_hash = $4',
-        [email, name || null, poll.id, emailHash]
-      );
-    }
+    await query(
+      'UPDATE poll_voters SET email = $1, display_name = $2 WHERE poll_id = $3 AND email_hash = $4',
+      [email, poll.is_nominative ? (name || null) : null, poll.id, emailHash]
+    );
   } else {
     token = nanoid(32);
     await query(
       'INSERT INTO poll_voters (poll_id, email_hash, magic_token, email, display_name) VALUES ($1,$2,$3,$4,$5)',
-      [poll.id, emailHash, token, poll.is_nominative ? email : null, poll.is_nominative ? (name || null) : null]
+      [poll.id, emailHash, token, email, poll.is_nominative ? (name || null) : null]
     );
   }
 
@@ -152,8 +152,9 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   if (!voter) return res.status(404).render('error', { message: 'Lien de vote invalide.' });
   if (voter.voted_at) return res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
 
-  const { rows: options } = await query('SELECT id FROM options WHERE poll_id = $1', [poll.id]);
+  const { rows: options } = await query('SELECT id, label FROM options WHERE poll_id = $1 ORDER BY position', [poll.id]);
 
+  const myScores = [];
   await tx(async (client) => {
     const b = await client.query(
       'INSERT INTO ballots (poll_id, voter_id) VALUES ($1,$2) RETURNING id',
@@ -163,6 +164,7 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     for (const opt of options) {
       let score = parseInt(req.body[`score_${opt.id}`], 10);
       if (!Number.isInteger(score) || score < -2 || score > 2) score = 0; // abstention = 0
+      myScores.push({ label: opt.label, score });
       await client.query(
         'INSERT INTO ballot_scores (ballot_id, option_id, score) VALUES ($1,$2,$3)',
         [ballotId, opt.id, score]
@@ -171,26 +173,33 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     await client.query('UPDATE poll_voters SET voted_at = now() WHERE id = $1', [voter.id]);
   });
 
-  res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
-});
-
-// --- Résultats publics permanents (URL stable, partageable) ---
-// Les résultats sont agrégés et anonymes (jamais les votes individuels).
-// Un vote privé exige d'abord le mot de passe d'accès.
-router.get('/vote/:id/results', async (req, res) => {
-  const poll = await getPoll(req.params.id);
-  if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
-  if (poll.is_private && !hasAccess(req, poll)) {
-    return res.render('vote_password', { poll, error: null });
+  // Confirmation par email (best-effort : ne bloque jamais le vote).
+  if (voter.email) {
+    try {
+      const { options: results } = await computeResults(poll.id);
+      await sendVoteConfirmation({
+        to: voter.email,
+        pollTitle: poll.title,
+        myScores,
+        results: results.map((o) => ({ label: o.label, total: o.total, rank: o.rank })),
+        permalink: `${BASE_URL()}/vote/${poll.id}/results/${req.params.token}`,
+      });
+    } catch (err) {
+      console.error('Confirmation de vote non envoyée :', err);
+    }
   }
-  const { options, ballotCount } = await computeResults(poll.id);
-  res.render('results', {
-    poll, options, ballotCount, token: null, closed: isClosed(poll),
-    justVoted: false, publicUrl: `${BASE_URL()}/vote/${poll.id}/results`,
-  });
+
+  res.redirect(`/vote/${poll.id}/results/${req.params.token}?v=1`);
 });
 
-// --- Résultats via lien magique (juste après avoir voté) ---
+// --- Résultats sans jeton : réservés aux votants → on renvoie à la page du vote ---
+router.get('/vote/:id/results', (req, res) => {
+  res.redirect(`/vote/${req.params.id}`);
+});
+
+// --- Résultats via lien magique (après avoir voté) ---
+// C'est le PERMALIEN personnel du votant : il reste valable et affiche les
+// résultats en temps réel à chaque visite.
 router.get('/vote/:id/results/:token', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
@@ -208,27 +217,20 @@ router.get('/vote/:id/results/:token', async (req, res) => {
   const { options, ballotCount } = await computeResults(poll.id);
   res.render('results', {
     poll, options, ballotCount, token: req.params.token, closed: isClosed(poll),
-    justVoted: true, publicUrl: `${BASE_URL()}/vote/${poll.id}/results`,
+    justVoted: req.query.v === '1',
+    permalink: `${BASE_URL()}/vote/${poll.id}/results/${req.params.token}`,
   });
 });
 
-// --- Résultats JSON pour la mise à jour en temps réel ---
-// Autorisé si le vote est public, si l'accès privé est déverrouillé (cookie),
-// ou pour un votant ayant déjà voté (jeton).
+// --- Résultats JSON pour la mise à jour en temps réel (réservé au votant) ---
 router.get('/api/polls/:id/results', async (req, res) => {
-  const poll = await getPoll(req.params.id);
-  if (!poll) return res.status(404).json({ error: 'not_found' });
   const token = String(req.query.token || '');
-  let allowed = !poll.is_private || hasAccess(req, poll);
-  if (!allowed && token) {
-    const { rows } = await query(
-      'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-      [poll.id, token]
-    );
-    allowed = !!(rows[0] && rows[0].voted_at);
-  }
-  if (!allowed) return res.status(403).json({ error: 'forbidden' });
-  const { options, ballotCount } = await computeResults(poll.id);
+  const { rows } = await query(
+    'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
+    [req.params.id, token]
+  );
+  if (!rows[0] || !rows[0].voted_at) return res.status(403).json({ error: 'forbidden' });
+  const { options, ballotCount } = await computeResults(req.params.id);
   res.json({ options, ballotCount });
 });
 

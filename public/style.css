@@ -107,7 +107,7 @@ textarea { resize: vertical; min-height: 70px; }
 .option-block { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; background: #fff; box-shadow: var(--shadow-sm); }
 .option-block h3 { margin: 0 0 4px; }
 .opt-head { display: flex; justify-content: space-between; align-items: center; }
-.opt-vote-img { display: block; max-width: 100%; max-height: 260px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 10px; object-fit: contain; }
+.opt-vote-img { display: block; width: 100%; max-height: 440px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 12px; object-fit: contain; background: #f7f7fb; }
 .opt-cell { display: flex; align-items: center; gap: 12px; }
 .opt-thumb { width: 52px; height: 52px; border-radius: 8px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
 
@@ -150,8 +150,14 @@ table.results th { font-size: 13px; text-transform: uppercase; letter-spacing: .
 .res-name { font-size: 16px; font-weight: 700; }
 .res-desc { font-size: 13px; }
 .res-score { font-size: 19px; font-weight: 800; }
-.res-bar { height: 9px; border-radius: 100px; background: #f1f2f6; overflow: hidden; }
-.res-bar-fill { height: 100%; border-radius: 100px; }
+.res-row.is-winner { background: var(--indigo-tint); border-color: #dfe2fb; }
+.res-thumb { width: 64px; height: 64px; border-radius: 10px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
+/* Jauge bidirectionnelle centrée sur 0 : vert à droite (soutien), rouge à gauche (rejet) */
+.gauge { position: relative; height: 22px; background: #f1f2f6; border-radius: 100px; overflow: hidden; }
+.gauge-fill { position: absolute; top: 0; bottom: 0; }
+.gauge-fill.pos { left: 50%; background: var(--pos); border-radius: 0 100px 100px 0; }
+.gauge-fill.neg { right: 50%; background: var(--neg); border-radius: 100px 0 0 100px; }
+.gauge-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #b8bdca; transform: translateX(-50%); }
 .tie { font-size: 11px; font-weight: 700; color: var(--muted); background: #f1f2f6; padding: 2px 8px; border-radius: 100px; margin-left: 6px; }
 .live-pill { display: inline-flex; align-items: center; gap: 6px; background: #e9f7ee; color: var(--pos); font-size: 12px; font-weight: 700; padding: 6px 11px; border-radius: 100px; }
 .live-pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--pos); }

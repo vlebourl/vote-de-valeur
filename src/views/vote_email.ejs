@@ -31,9 +31,8 @@
     <% if (poll.is_nominative) { %>
       <p class="field-hint">Scrutin nominatif : votre email et votre nom identifient votre bulletin auprès de l'organisateur.</p>
     <% } else { %>
-      <p class="field-hint">Votre email sert uniquement à garantir l'unicité du vote. Il n'est pas associé à votre bulletin (vote secret).</p>
+      <p class="field-hint">Votre email garantit l'unicité du vote et sert à vous envoyer votre confirmation. Il n'est jamais associé à votre bulletin (vote secret).</p>
     <% } %>
   </div>
 <% } %>
-<p class="field-hint" style="text-align:center;margin-top:18px"><a href="/vote/<%= poll.id %>/results">Voir les résultats →</a></p>
 <%- include('partials/footer') %>

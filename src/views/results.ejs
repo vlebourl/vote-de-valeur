@@ -1,11 +1,8 @@
 <%- include('partials/header', { pageTitle: 'Résultats — ' + poll.title }) %>
 <% var jv = (typeof justVoted !== 'undefined' && justVoted);
-   var pub = (typeof publicUrl !== 'undefined' && publicUrl) ? publicUrl : ''; %>
-<div class="row-actions" style="justify-content:space-between">
-  <h1 style="margin-bottom:4px"><%= poll.title %></h1>
-  <a href="/vote/<%= poll.id %>" class="muted">← Page du vote</a>
-</div>
-<% if (jv) { %><div class="notice">Votre vote a bien été enregistré. Merci !</div><% } %>
+   var pl = (typeof permalink !== 'undefined' && permalink) ? permalink : ''; %>
+<h1 style="margin-bottom:4px"><%= poll.title %></h1>
+<% if (jv) { %><div class="notice">Votre vote a bien été enregistré. Merci ! Un email de confirmation vous a été envoyé.</div><% } %>
 
 <div class="card">
   <div class="row-actions" style="justify-content:space-between">
@@ -19,14 +16,11 @@
 
 <div class="card">
   <h2 style="margin-top:0">Lien permanent des résultats</h2>
-  <p class="muted" style="margin-top:0">À partager ou à mettre en favori pour revenir voir les résultats à tout moment.</p>
+  <p class="muted" style="margin-top:0">Votre lien personnel à conserver : il affiche les résultats <strong>en temps réel</strong>, à tout moment.</p>
   <div class="share-box">
-    <input type="text" id="pub" value="<%= pub %>" readonly>
+    <input type="text" id="pub" value="<%= pl %>" readonly>
     <button class="btn btn-sm" type="button" onclick="navigator.clipboard.writeText(document.getElementById('pub').value)">Copier</button>
   </div>
-  <% if (!closed) { %>
-    <p style="margin-bottom:0"><a class="btn btn-ghost btn-sm" href="/vote/<%= poll.id %>">Participer au vote</a></p>
-  <% } %>
 </div>
 
 <% if (!closed) { %>
@@ -50,8 +44,8 @@
     opts.forEach(o => { rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
     const fmt = t => t > 0 ? '+' + t : String(t);
     const cls = t => t > 0 ? 'pos' : (t < 0 ? 'neg' : '');
+    const half = t => (Math.abs(t) / maxAbs * 50).toFixed(1);
     const winners = opts.filter(o => o.rank === 1);
-    const rest = opts.filter(o => o.rank !== 1);
     let html = '';
     if (winners.length) {
       html += '<div class="winner"><div class="winner-label">Choix retenu' + (winners.length > 1 ? ' (ex æquo)' : '') + '</div>' +
@@ -59,22 +53,21 @@
               '<div class="winner-score total ' + cls(winners[0].total) + '">' + fmt(winners[0].total) + '</div></div>';
     }
     html += '<div class="res-list">';
-    for (const o of rest) {
-      const w = Math.round(Math.abs(o.total) / maxAbs * 100);
-      const color = o.total < 0 ? 'var(--neg)' : 'var(--indigo)';
-      const thumb = o.has_image ? '<img class="opt-thumb" src="/options/' + o.id + '/image" alt="">' : '';
+    for (const o of opts) {
+      const thumb = o.has_image ? '<img class="res-thumb" src="/options/' + o.id + '/image" alt="">' : '';
       const tie = rankCount[o.rank] > 1 ? '<span class="tie">ex æquo</span>' : '';
       const desc = o.description ? '<div class="muted res-desc">' + escapeHtml(o.description) + '</div>' : '';
       const name = o.label ? escapeHtml(o.label) : '(image)';
-      html += '<div class="res-row"><div class="res-head">' +
+      const gcls = o.total < 0 ? 'neg' : 'pos';
+      html += '<div class="res-row' + (o.rank === 1 ? ' is-winner' : '') + '"><div class="res-head">' +
                 '<span class="res-rank">' + o.rank + '</span>' +
                 '<div class="res-main">' + thumb + '<div><div class="res-name">' + name + tie + '</div>' + desc + '</div></div>' +
                 '<span class="res-score total ' + cls(o.total) + '">' + fmt(o.total) + '</span>' +
               '</div>' +
-              '<div class="res-bar"><div class="res-bar-fill" style="width:' + w + '%;background:' + color + '"></div></div></div>';
+              '<div class="gauge"><div class="gauge-fill ' + gcls + '" style="width:' + half(o.total) + '%"></div><div class="gauge-center"></div></div></div>';
     }
     html += '</div><p class="muted" style="font-size:13px;margin-top:12px">Basé sur ' + data.ballotCount +
-            ' bulletin' + (data.ballotCount > 1 ? 's' : '') + '. Classement à la somme des notes ; abstention = 0. Les égalités partagent le même rang.</p>';
+            ' bulletin' + (data.ballotCount > 1 ? 's' : '') + '. Jauge centrée sur 0 : vert = soutien, rouge = rejet. Somme des notes ; égalités au même rang.</p>';
     document.getElementById('results-container').innerHTML = html;
   }
   setInterval(refresh, 5000);

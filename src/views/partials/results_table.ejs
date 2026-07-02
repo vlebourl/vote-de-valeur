@@ -5,7 +5,7 @@
   options.forEach(function (o) { rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
   var winners = options.filter(function (o) { return o.rank === 1; });
   var rest = options.filter(function (o) { return o.rank !== 1; });
-  function pct(o) { return Math.round(Math.abs(o.total) / maxAbs * 100); }
+  function half(o) { return (Math.abs(o.total) / maxAbs * 50).toFixed(1); } // demi-largeur de la jauge
   function fmt(t) { return t > 0 ? '+' + t : String(t); }
   function scoreCls(t) { return t > 0 ? 'pos' : (t < 0 ? 'neg' : ''); }
 %>
@@ -17,12 +17,12 @@
   </div>
 <% } %>
 <div class="res-list">
-  <% rest.forEach(function (o) { %>
-    <div class="res-row">
+  <% options.forEach(function (o) { %>
+    <div class="res-row<%= o.rank === 1 ? ' is-winner' : '' %>">
       <div class="res-head">
         <span class="res-rank"><%= o.rank %></span>
         <div class="res-main">
-          <% if (o.has_image) { %><img class="opt-thumb" src="/options/<%= o.id %>/image" alt=""><% } %>
+          <% if (o.has_image) { %><img class="res-thumb" src="/options/<%= o.id %>/image" alt=""><% } %>
           <div>
             <div class="res-name"><%= o.label ? o.label : '(image)' %><% if (rankCount[o.rank] > 1) { %><span class="tie">ex æquo</span><% } %></div>
             <% if (o.description) { %><div class="muted res-desc"><%= o.description %></div><% } %>
@@ -30,8 +30,11 @@
         </div>
         <span class="res-score total <%= scoreCls(o.total) %>"><%= fmt(o.total) %></span>
       </div>
-      <div class="res-bar"><div class="res-bar-fill" style="width:<%= pct(o) %>%;background:<%= o.total < 0 ? 'var(--neg)' : 'var(--indigo)' %>"></div></div>
+      <div class="gauge">
+        <div class="gauge-fill <%= o.total < 0 ? 'neg' : 'pos' %>" style="width:<%= half(o) %>%"></div>
+        <div class="gauge-center"></div>
+      </div>
     </div>
   <% }) %>
 </div>
-<p class="muted" style="font-size:13px;margin-top:12px">Basé sur <%= ballotCount %> bulletin<%= ballotCount > 1 ? 's' : '' %>. Classement à la somme des notes (−2 à +2) ; abstention comptée comme 0. Les égalités partagent le même rang.</p>
+<p class="muted" style="font-size:13px;margin-top:12px">Basé sur <%= ballotCount %> bulletin<%= ballotCount > 1 ? 's' : '' %>. Jauge centrée sur 0 : vert vers la droite (soutien), rouge vers la gauche (rejet). Somme des notes −2…+2 ; égalités au même rang.</p>

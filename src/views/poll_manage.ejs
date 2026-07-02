@@ -21,11 +21,7 @@
     <input type="text" id="share" value="<%= shareUrl %>" readonly>
     <button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('share').value)">Copier</button>
   </div>
-  <p class="muted" style="margin-bottom:4px">Lien permanent des résultats (public) :</p>
-  <div class="share-box">
-    <input type="text" id="share-res" value="<%= shareUrl %>/results" readonly>
-    <button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('share-res').value)">Copier</button>
-  </div>
+  <p class="field-hint">Chaque votant reçoit, après son vote, un lien personnel vers les résultats en temps réel (aussi envoyé par email).</p>
   <% if (poll.is_private) { %>
     <p class="field-hint">Vote privé : communiquez aussi le mot de passe aux participants (séparément du lien, de préférence).</p>
   <% } %>
