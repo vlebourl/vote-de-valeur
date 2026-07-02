@@ -25,6 +25,30 @@ function uploadOptions(req, res, next) {
   });
 }
 
+// Upload d'une seule image (ajout d'option depuis la page de gestion).
+// En cas d'erreur, on revient à la page de gestion avec un message.
+function uploadSingle(req, res, next) {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Image trop volumineuse (3 Mo maximum).'
+        : 'Échec du téléversement de l’image.';
+      return res.redirect(`/polls/${req.params.id}/manage?err=${encodeURIComponent(msg)}`);
+    }
+    next();
+  });
+}
+
+// Charge un vote et vérifie que l'utilisateur en est le propriétaire.
+// Renvoie le vote, ou null après avoir répondu par une erreur.
+async function loadOwnedPoll(req, res) {
+  const { rows } = await query('SELECT id, owner_id FROM polls WHERE id = $1', [req.params.id]);
+  const poll = rows[0];
+  if (!poll) { res.status(404).render('error', { message: 'Vote introuvable.' }); return null; }
+  if (poll.owner_id !== req.user.id) { res.status(403).render('error', { message: 'Accès refusé.' }); return null; }
+  return poll;
+}
+
 // Tableau de bord : liste des votes de l'utilisateur
 router.get('/dashboard', requireAuth, async (req, res) => {
   const { rows: polls } = await query(
@@ -122,8 +146,10 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
   if (poll.owner_id !== req.user.id) return res.status(403).render('error', { message: 'Accès refusé.' });
 
+  // On évite de charger les blobs image ici (juste un indicateur de présence).
   const { rows: options } = await query(
-    'SELECT * FROM options WHERE poll_id = $1 ORDER BY position', [poll.id]
+    `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
+       FROM options WHERE poll_id = $1 ORDER BY position`, [poll.id]
   );
   const { options: results, ballotCount } = await computeResults(poll.id);
   const { rows: voterStats } = await query(
@@ -136,7 +162,76 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
     poll, options, results, ballotCount,
     voterStats: voterStats[0],
     baseUrl: process.env.BASE_URL || '',
+    notice: req.query.ok || null,
+    error: req.query.err || null,
   });
+});
+
+// Édition du titre et de la description (à tout moment)
+router.post('/polls/:id/edit', requireAuth, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const title = String(req.body.title || '').trim();
+  const description = String(req.body.description || '').trim();
+  if (!title) {
+    return res.redirect(`/polls/${poll.id}/manage?err=${encodeURIComponent('Le titre ne peut pas être vide.')}`);
+  }
+  await query('UPDATE polls SET title = $1, description = $2 WHERE id = $3', [title, description, poll.id]);
+  res.redirect(`/polls/${poll.id}/manage?ok=${encodeURIComponent('Titre et description mis à jour.')}`);
+});
+
+// Ajout d'une option (intitulé et/ou image)
+router.post('/polls/:id/options', requireAuth, uploadSingle, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const label = String(req.body.label || '').trim();
+  const description = String(req.body.description || '').trim();
+  const file = req.file || null;
+  if (!label && !file) {
+    return res.redirect(`/polls/${poll.id}/manage?err=${encodeURIComponent('Une option doit avoir au moins un intitulé ou une image.')}`);
+  }
+  const { rows: pos } = await query(
+    'SELECT COALESCE(MAX(position), -1) + 1 AS next FROM options WHERE poll_id = $1', [poll.id]
+  );
+  await query(
+    `INSERT INTO options (poll_id, label, description, image_data, image_mime, position)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [poll.id, label, description, file ? file.buffer : null, file ? file.mimetype : null, pos[0].next]
+  );
+  res.redirect(`/polls/${poll.id}/manage?ok=${encodeURIComponent('Option ajoutée.')}`);
+});
+
+// Modification du texte d'une option existante (intitulé + description)
+router.post('/polls/:id/options/:optId/edit', requireAuth, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const label = String(req.body.label || '').trim();
+  const description = String(req.body.description || '').trim();
+  const { rows } = await query(
+    'SELECT (image_data IS NOT NULL) AS has_image FROM options WHERE id = $1 AND poll_id = $2',
+    [req.params.optId, poll.id]
+  );
+  if (!rows[0]) return res.status(404).render('error', { message: 'Option introuvable.' });
+  if (!label && !rows[0].has_image) {
+    return res.redirect(`/polls/${poll.id}/manage?err=${encodeURIComponent('Une option sans image doit conserver un intitulé.')}`);
+  }
+  await query(
+    'UPDATE options SET label = $1, description = $2 WHERE id = $3 AND poll_id = $4',
+    [label, description, req.params.optId, poll.id]
+  );
+  res.redirect(`/polls/${poll.id}/manage?ok=${encodeURIComponent('Option modifiée.')}`);
+});
+
+// Suppression d'une option (un vote doit conserver au moins 2 options)
+router.post('/polls/:id/options/:optId/delete', requireAuth, async (req, res) => {
+  const poll = await loadOwnedPoll(req, res);
+  if (!poll) return;
+  const { rows: cnt } = await query('SELECT COUNT(*)::int AS n FROM options WHERE poll_id = $1', [poll.id]);
+  if (cnt[0].n <= 2) {
+    return res.redirect(`/polls/${poll.id}/manage?err=${encodeURIComponent('Un vote doit conserver au moins 2 options.')}`);
+  }
+  await query('DELETE FROM options WHERE id = $1 AND poll_id = $2', [req.params.optId, poll.id]);
+  res.redirect(`/polls/${poll.id}/manage?ok=${encodeURIComponent('Option supprimée.')}`);
 });
 
 // Clôturer / rouvrir un vote

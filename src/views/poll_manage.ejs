@@ -11,6 +11,9 @@
 </p>
 <% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
 
+<% if (typeof notice !== 'undefined' && notice) { %><div class="notice"><%= notice %></div><% } %>
+<% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+
 <div class="card">
   <h2 style="margin-top:0">Partager</h2>
   <p class="muted">Lien du vote à diffuser aux participants :</p>
@@ -21,6 +24,56 @@
   <% if (poll.is_private) { %>
     <p class="field-hint">Vote privé : communiquez aussi le mot de passe aux participants (séparément du lien, de préférence).</p>
   <% } %>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Modifier le vote</h2>
+  <% if (ballotCount > 0) { %>
+    <div class="error" style="background:#fffbeb;border-color:#fde68a;color:#b45309">
+      ⚠ <strong><%= ballotCount %> bulletin<%= ballotCount > 1 ? 's' : '' %></strong> déjà déposé<%= ballotCount > 1 ? 's' : '' %>.
+      Le titre et la description restent modifiables sans effet sur les résultats.
+      <strong>Ajouter</strong> une option : les votants ayant déjà voté seront comptés comme s'abstenant (0) dessus.
+      <strong>Supprimer</strong> une option retire définitivement ses notes de tous les bulletins.
+    </div>
+  <% } %>
+
+  <form method="post" action="/polls/<%= poll.id %>/edit">
+    <label for="title">Titre</label>
+    <input type="text" id="title" name="title" value="<%= poll.title %>" required>
+    <label for="description">Description (optionnelle)</label>
+    <textarea id="description" name="description" placeholder="Contexte, consignes…"><%= poll.description %></textarea>
+    <button class="btn btn-sm" type="submit" style="margin-top:10px">Enregistrer le titre / la description</button>
+  </form>
+
+  <h3 style="margin:24px 0 4px">Options (<%= options.length %>)</h3>
+  <p class="field-hint">Chaque option est notée de −2 à +2 par les votants. Un vote doit conserver au moins 2 options.</p>
+
+  <% options.forEach(function (o) { %>
+    <div class="option-block">
+      <div class="opt-cell" style="align-items:flex-start;margin-bottom:10px">
+        <% if (o.has_image) { %><img class="opt-thumb" src="/options/<%= o.id %>/image" alt=""><% } %>
+        <form method="post" action="/polls/<%= poll.id %>/options/<%= o.id %>/edit" style="flex:1;margin:0">
+          <input type="text" name="label" value="<%= o.label %>" placeholder="Intitulé (optionnel si image)">
+          <input type="text" name="description" value="<%= o.description %>" placeholder="Description (optionnelle)" style="margin-top:8px">
+          <button class="btn btn-sm btn-ghost" type="submit" style="margin-top:10px">Enregistrer</button>
+        </form>
+      </div>
+      <form method="post" action="/polls/<%= poll.id %>/options/<%= o.id %>/delete" onsubmit="return confirm('Supprimer définitivement cette option ? Ses notes seront retirées de tous les bulletins.')">
+        <button class="btn btn-sm btn-danger" type="submit" <%- options.length <= 2 ? 'disabled title="Un minimum de 2 options est requis"' : '' %>>Supprimer cette option</button>
+      </form>
+    </div>
+  <% }) %>
+
+  <h3 style="margin:24px 0 4px">Ajouter une option</h3>
+  <form method="post" action="/polls/<%= poll.id %>/options" enctype="multipart/form-data" class="option-block">
+    <label>Intitulé (optionnel si image)</label>
+    <input type="text" name="label" placeholder="Nouvelle option">
+    <label>Description (optionnelle)</label>
+    <input type="text" name="description" placeholder="Précisions…">
+    <label>Image (optionnelle, 3 Mo max)</label>
+    <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif">
+    <button class="btn btn-sm" type="submit" style="margin-top:12px">+ Ajouter l'option</button>
+  </form>
 </div>
 
 <div class="card">
