@@ -56,6 +56,34 @@ L'app applique automatiquement les migrations au démarrage puis écoute sur le 
 4. **Port** : l'app écoute sur `3000`. Configurez le domaine/port dans Coolify. Healthcheck disponible sur `/healthz`.
 5. **Email** : configurez SPF/DKIM du domaine expéditeur chez votre fournisseur SMTP pour une bonne délivrabilité.
 
+### Première mise en ligne (pas à pas)
+
+1. Créez un dépôt Git distant (GitHub/GitLab, ou le Git intégré de Coolify) et poussez le code :
+   ```bash
+   git remote add origin <url-du-depot>
+   git push -u origin main
+   ```
+2. Dans Coolify : **+ New Resource → Application → Public/Private Repository**, sélectionnez le dépôt. Coolify détecte le `Dockerfile`.
+3. Ajoutez une ressource **PostgreSQL** (+ New Resource → Database → PostgreSQL) et copiez son URL de connexion interne.
+4. Renseignez les variables d'environnement de l'application (voir tableau ci-dessus). `SMTP_DEV_MODE=false` en prod.
+5. Réglez le port exposé sur `3000`, associez votre domaine, déployez.
+
+### Mettre à jour (nouvelles versions)
+
+Deux utilitaires sont fournis :
+
+- `deploy/coolify.env` (à créer depuis `deploy/coolify.env.example`) : y mettre l'URL Coolify, un jeton API et l'UUID de l'app. Ce fichier est ignoré par git.
+- `deploy/deploy.sh` (ou `npm run deploy`) : commit + push, puis déclenche le redéploiement Coolify via l'API.
+
+```bash
+cp deploy/coolify.env.example deploy/coolify.env   # puis remplir les valeurs
+npm run deploy "ma nouvelle version"
+```
+
+Si l'auto-deploy Coolify est activé sur la branche (webhook Git), un simple `git push` suffit et le script se contente alors du push.
+
+> Les images des options sont stockées dans Postgres (colonne `options.image_data`). Elles survivent donc aux redéploiements tant que la base Coolify est conservée — aucun volume de fichiers à gérer.
+
 ## Modèle de données
 
 - `users` — comptes créateurs.

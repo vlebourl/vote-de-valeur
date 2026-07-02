@@ -33,7 +33,7 @@ services:
       SMTP_FROM: ${SMTP_FROM:-Vote de valeur <noreply@example.com>}
       SMTP_DEV_MODE: ${SMTP_DEV_MODE:-true}
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
 
 volumes:
   db_data:
