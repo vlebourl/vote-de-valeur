@@ -79,6 +79,9 @@ CREATE INDEX IF NOT EXISTS idx_scores_option ON ballot_scores(option_id);
 -- Si un scrutin est marqué nominatif, on stocke en plus l'email/nom en clair
 -- et on relie chaque bulletin déposé à son votant (dé-anonymisation assumée).
 ALTER TABLE polls        ADD COLUMN IF NOT EXISTS is_nominative BOOLEAN NOT NULL DEFAULT false;
+-- Mode d'identification du votant : 'email' (lien magique, défaut) ou 'name'
+-- (mode léger : on saisit son nom, un nom = un vote, sans email).
+ALTER TABLE polls        ADD COLUMN IF NOT EXISTS auth_mode TEXT NOT NULL DEFAULT 'email';
 ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS email        TEXT;   -- en clair, uniquement si nominatif
 ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS display_name TEXT;   -- nom optionnel, uniquement si nominatif
 ALTER TABLE ballots      ADD COLUMN IF NOT EXISTS voter_id     UUID REFERENCES poll_voters(id) ON DELETE SET NULL;

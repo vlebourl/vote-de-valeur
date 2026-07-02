@@ -4,12 +4,31 @@
 
 <% if (closed) { %>
   <div class="card"><p>Ce vote est <strong>clôturé</strong>. Il n'est plus possible d'y participer.</p></div>
-<% } else if (sent) { %>
+
+<% } else if (typeof sent !== 'undefined' && sent) { %>
   <div class="card">
     <div class="notice">Un lien de vote personnel vient d'être envoyé par email.</div>
     <p>Ouvrez votre boîte mail et cliquez sur le lien pour accéder au bulletin. Le lien est unique et ne fonctionne que pour vous.</p>
     <p class="field-hint">Vous ne recevez rien ? Vérifiez vos spams, ou <a href="/vote/<%= poll.id %>">réessayez</a>.</p>
   </div>
+
+<% } else if (poll.auth_mode === 'name') { %>
+  <div class="card" style="max-width:480px">
+    <% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+    <% if (poll.is_nominative) { %>
+      <div class="error" style="background:#fffbeb;border-color:#fde68a;color:#b45309">
+        <strong>Scrutin nominatif.</strong> Votre nom et votre vote seront visibles par l'organisateur : ce n'est pas un vote secret.
+      </div>
+    <% } %>
+    <p>Pour voter, indiquez votre nom. <strong>Un nom = un vote.</strong> Vous accéderez directement au bulletin.</p>
+    <form method="post" action="/vote/<%= poll.id %>/name">
+      <label for="name">Votre nom</label>
+      <input type="text" id="name" name="name" required autofocus maxlength="120" placeholder="Prénom Nom">
+      <div style="margin-top:18px"><button class="btn" type="submit">Accéder au bulletin</button></div>
+    </form>
+    <p class="field-hint"><% if (poll.is_nominative) { %>Votre nom identifie votre bulletin auprès de l'organisateur.<% } else { %>Votre nom sert uniquement à éviter les doubles votes ; il n'est pas associé à votre bulletin (vote secret).<% } %></p>
+  </div>
+
 <% } else { %>
   <div class="card" style="max-width:480px">
     <% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>

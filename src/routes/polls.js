@@ -73,6 +73,7 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
   const description = String(req.body.description || '').trim();
   const isPrivate = req.body.is_private === 'on';
   const isNominative = req.body.is_nominative === 'on';
+  const authMode = req.body.auth_mode === 'name' ? 'name' : 'email';
   const password = String(req.body.password || '');
   const closeAtRaw = String(req.body.close_at || '').trim();
 
@@ -112,9 +113,9 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
 
   const pollId = await tx(async (client) => {
     const { rows } = await client.query(
-      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [req.user.id, title, description, isPrivate, passwordHash, closeAt, isNominative]
+      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative, auth_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [req.user.id, title, description, isPrivate, passwordHash, closeAt, isNominative, authMode]
     );
     const id = rows[0].id;
     for (let i = 0; i < options.length; i++) {

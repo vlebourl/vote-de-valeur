@@ -7,6 +7,7 @@
 </div>
 <p>
   <% if (poll.is_private) { %><span class="badge badge-private">privé</span> <% } %>
+  <% if (poll.auth_mode === 'name') { %><span class="badge badge-private">vote par nom</span> <% } %>
   <% if (poll.status === 'open') { %><span class="badge badge-open">ouvert</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
 </p>
 <% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
@@ -21,7 +22,11 @@
     <input type="text" id="share" value="<%= shareUrl %>" readonly>
     <button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('share').value)">Copier</button>
   </div>
-  <p class="field-hint">Chaque votant reçoit, après son vote, un lien personnel vers les résultats en temps réel (aussi envoyé par email).</p>
+  <% if (poll.auth_mode === 'name') { %>
+    <p class="field-hint">Mode « nom » : les votants saisissent leur nom (un nom = un vote) et accèdent directement au bulletin, sans email.</p>
+  <% } else { %>
+    <p class="field-hint">Chaque votant reçoit, après son vote, un lien personnel vers les résultats en temps réel (aussi envoyé par email).</p>
+  <% } %>
   <% if (poll.is_private) { %>
     <p class="field-hint">Vote privé : communiquez aussi le mot de passe aux participants (séparément du lien, de préférence).</p>
   <% } %>

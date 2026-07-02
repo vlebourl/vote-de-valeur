@@ -60,6 +60,7 @@ router.post('/vote/:id/access', async (req, res) => {
 router.post('/vote/:id/request', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
+  if (poll.auth_mode === 'name') return res.redirect(`/vote/${poll.id}`);
   if (poll.is_private && !hasAccess(req, poll)) return res.redirect(`/vote/${poll.id}`);
   if (isClosed(poll)) return res.render('vote_email', { poll, closed: true, sent: false });
 
@@ -106,6 +107,50 @@ router.post('/vote/:id/request', async (req, res) => {
   }
   // Réponse identique quel que soit le cas (ne révèle pas si l'email a déjà voté).
   res.redirect(`/vote/${poll.id}?sent=1`);
+});
+
+// --- Mode « nom » (léger, sans email) : on saisit son nom et on vote directement ---
+// Unicité par nom (normalisé) : un nom = un vote par scrutin.
+router.post('/vote/:id/name', async (req, res) => {
+  const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
+  if (poll.auth_mode !== 'name') return res.redirect(`/vote/${poll.id}`);
+  if (poll.is_private && !hasAccess(req, poll)) return res.redirect(`/vote/${poll.id}`);
+  if (isClosed(poll)) return res.render('vote_email', { poll, closed: true, sent: false });
+
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2) {
+    return res.status(400).render('vote_email', { poll, closed: false, sent: false, error: 'Entrez votre nom (2 caractères minimum).' });
+  }
+  const nameHash = hashEmail(name.toLowerCase());
+  const alreadyVoted = () => res.status(409).render('vote_email', {
+    poll, closed: false, sent: false, error: `Le nom « ${name} » a déjà voté pour ce scrutin.`,
+  });
+
+  const existing = await query(
+    'SELECT magic_token, voted_at FROM poll_voters WHERE poll_id = $1 AND email_hash = $2',
+    [poll.id, nameHash]
+  );
+  let token;
+  if (existing.rows[0]) {
+    if (existing.rows[0].voted_at) return alreadyVoted();
+    token = existing.rows[0].magic_token;
+    await query('UPDATE poll_voters SET display_name = $1 WHERE poll_id = $2 AND email_hash = $3', [name, poll.id, nameHash]);
+  } else {
+    token = nanoid(32);
+    try {
+      await query(
+        'INSERT INTO poll_voters (poll_id, email_hash, magic_token, display_name) VALUES ($1,$2,$3,$4)',
+        [poll.id, nameHash, token, name]
+      );
+    } catch (e) {
+      if (e.code !== '23505') throw e; // course sur le même nom
+      const again = await query('SELECT magic_token, voted_at FROM poll_voters WHERE poll_id = $1 AND email_hash = $2', [poll.id, nameHash]);
+      if (again.rows[0]?.voted_at) return alreadyVoted();
+      token = again.rows[0].magic_token;
+    }
+  }
+  return res.redirect(`/vote/${poll.id}/ballot/${token}`);
 });
 
 // --- Bulletin via lien magique ---
