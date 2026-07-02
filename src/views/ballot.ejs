@@ -18,7 +18,7 @@
         <% [-2,-1,0,1,2].forEach(function (v) {
              var id = 'opt_' + o.id + '_' + (v<0 ? 'm'+(-v) : v); %>
           <input type="radio" id="<%= id %>" name="score_<%= o.id %>" value="<%= v %>" <%= v===0 ? 'checked' : '' %>>
-          <label for="<%= id %>"><%= v>0 ? '+'+v : v %></label>
+          <label for="<%= id %>" class="rate rate<%= v %>"><%= v>0 ? '+'+v : v %></label>
         <% }) %>
       </div>
     </div>
