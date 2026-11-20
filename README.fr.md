@@ -88,6 +88,7 @@ Voir [`.env.example`](.env.example). Variables principales :
 | `BASE_URL` | URL publique, utilisée dans les liens envoyés par email |
 | `JWT_SECRET`, `EMAIL_HASH_SECRET` | Secrets aléatoires d'au moins 32 caractères (`openssl rand -hex 32`), obligatoires en production |
 | `TRUST_PROXY` | Nombre de proxys devant l'application (`1` derrière Traefik/Coolify) |
+| `APP_TIMEZONE` | Fuseau d'affichage des dates (défaut `Europe/Paris`) ; la date de clôture saisie est convertie depuis le fuseau du navigateur |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Fournisseur d'email transactionnel (Resend, Postmark, Brevo…) |
 | `SMTP_DEV_MODE` | `true` : emails affichés dans la console au lieu d'être envoyés |
 
@@ -114,7 +115,6 @@ Pour redéployer depuis votre poste : `deploy/coolify.env` (à créer depuis `de
 - Choix du mode de calcul par scrutin (somme, moyenne, médiane ; le *jugement majoritaire* résiste mieux au vote stratégique).
 - Import d'une liste d'invités et relances.
 - Export CSV des résultats.
-- Gestion du fuseau horaire de la date de clôture (aujourd'hui interprétée dans le fuseau du serveur).
 
 ## Licence
 

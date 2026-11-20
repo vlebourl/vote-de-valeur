@@ -33,6 +33,17 @@ function readTrustProxy(raw) {
   return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
+function readTimeZone(raw) {
+  const zone = raw || 'Europe/Paris';
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: zone });
+    return zone;
+  } catch {
+    console.warn(`⚠ APP_TIMEZONE invalide (${zone}) : Europe/Paris utilisé.`);
+    return 'Europe/Paris';
+  }
+}
+
 export const config = {
   isProduction,
   port: Number(process.env.PORT || 3000),
@@ -40,4 +51,6 @@ export const config = {
   jwtSecret: readSecret('JWT_SECRET'),
   emailHashSecret: readSecret('EMAIL_HASH_SECRET'),
   trustProxy: readTrustProxy(process.env.TRUST_PROXY),
+  // Fuseau d'affichage des dates et de lecture des saisies sans JavaScript.
+  timeZone: readTimeZone(process.env.APP_TIMEZONE),
 };

@@ -48,3 +48,20 @@ test('readSecret : refuse en production un secret absent, court ou d\'exemple', 
   assert.throws(() => readSecret('S', { S: 'change-me-please-with-a-long-random-string' }, true));
   assert.match(readSecret('S', {}, false), /^dev-insecure/);
 });
+
+test('dates : heure de Paris convertie en UTC, été comme hiver', async () => {
+  const { zonedLocalToUtc, parseCloseAt, formatDateTime } = await import('../src/dates.js');
+  assert.equal(zonedLocalToUtc('2026-12-15T18:00', 'Europe/Paris').toISOString(), '2026-12-15T17:00:00.000Z');
+  assert.equal(zonedLocalToUtc('2026-07-15T18:00', 'Europe/Paris').toISOString(), '2026-07-15T16:00:00.000Z');
+  // Lendemain du passage à l'heure d'été (29 mars 2026, 2 h → 3 h).
+  assert.equal(zonedLocalToUtc('2026-03-29T12:00', 'Europe/Paris').toISOString(), '2026-03-29T10:00:00.000Z');
+  assert.equal(zonedLocalToUtc('pas une date', 'Europe/Paris'), null);
+
+  // L'instant calculé par le navigateur est prioritaire.
+  assert.equal(parseCloseAt({ close_at: '2026-12-15T18:00', close_at_utc: '2026-12-15T23:00:00.000Z' }, 'Europe/Paris')
+    .toISOString(), '2026-12-15T23:00:00.000Z');
+  assert.equal(parseCloseAt({ close_at: '' }, 'Europe/Paris'), null);
+  assert.equal(parseCloseAt({ close_at: 'n\'importe quoi' }, 'Europe/Paris'), undefined);
+
+  assert.equal(formatDateTime(new Date('2026-07-15T16:00:00Z'), 'Europe/Paris'), '15/07 à 18:00');
+});

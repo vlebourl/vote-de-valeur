@@ -175,3 +175,21 @@ test('en-têtes de sécurité', async () => {
   assert.equal(res.headers['referrer-policy'], 'same-origin');
   assert.equal(res.headers['x-powered-by'], undefined);
 });
+
+test('date de clôture : saisie à l\'heure de Paris, affichée à l\'heure de Paris', async () => {
+  const { agent } = await organizer(app);
+  // Sans JavaScript : saisie brute lue dans le fuseau de l'application.
+  const pollId = await createPoll(agent, { close_at: '2026-07-15T18:00' });
+  const { rows } = await query('SELECT close_at FROM polls WHERE id = $1', [pollId]);
+  assert.equal(rows[0].close_at.toISOString(), '2026-07-15T16:00:00.000Z');
+  const page = await agent.get(`/polls/${pollId}/manage`).expect(200);
+  assert.match(page.text, /Clôture automatique le 15\/07 à 18:00/);
+
+  // Avec JavaScript : instant UTC calculé par le navigateur, prioritaire.
+  const other = await createPoll(agent, { close_at: '2026-07-15T18:00', close_at_utc: '2026-07-15T22:30:00.000Z' });
+  const r2 = await query('SELECT close_at FROM polls WHERE id = $1', [other]);
+  assert.equal(r2.rows[0].close_at.toISOString(), '2026-07-15T22:30:00.000Z');
+
+  const bad = await createPoll(agent, { close_at: 'demain', expectStatus: 400 });
+  assert.match(bad.text, /Date de clôture invalide/);
+});

@@ -11,6 +11,7 @@
   <% if (poll.status === 'open') { %><span class="badge badge-open">ouvert</span><% } else { %><span class="badge badge-closed">clos</span><% } %>
 </p>
 <% if (poll.description) { %><p class="muted"><%= poll.description %></p><% } %>
+<% if (poll.close_at) { %><p class="muted">Clôture automatique le <%= formatDateTime(poll.close_at) %>.</p><% } %>
 
 <% if (typeof notice !== 'undefined' && notice) { %><div class="notice"><%= notice %></div><% } %>
 <% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>

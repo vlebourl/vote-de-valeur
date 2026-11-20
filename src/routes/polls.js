@@ -5,6 +5,7 @@ import { requireAuth, hashPassword } from '../auth.js';
 import { computeResults } from '../results.js';
 import { config } from '../config.js';
 import { requireUuidParam } from '../security.js';
+import { parseCloseAt } from '../dates.js';
 
 const router = Router();
 router.param('id', requireUuidParam);
@@ -79,7 +80,6 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
   const isNominative = req.body.is_nominative === 'on';
   const authMode = req.body.auth_mode === 'name' ? 'name' : 'email';
   const password = String(req.body.password || '');
-  const closeAtRaw = String(req.body.close_at || '').trim();
 
   // Fichiers image par index
   const fileByIdx = {};
@@ -112,7 +112,10 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
     return res.status(400).render('poll_new', { error: 'Mot de passe d’au moins 4 caractères pour un vote privé.' });
   }
 
-  const closeAt = closeAtRaw ? new Date(closeAtRaw) : null;
+  const closeAt = parseCloseAt(req.body, config.timeZone);
+  if (closeAt === undefined) {
+    return res.status(400).render('poll_new', { error: 'Date de clôture invalide.' });
+  }
   const passwordHash = isPrivate ? await hashPassword(password) : null;
 
   const pollId = await tx(async (client) => {

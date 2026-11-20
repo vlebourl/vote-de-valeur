@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { config } from './config.js';
 import { query } from './db.js';
 import { loadUser } from './auth.js';
+import { formatDateTime } from './dates.js';
 import { securityHeaders, sameOriginWrites, createLimiters } from './security.js';
 import authRoutes from './routes/auth.js';
 import pollRoutes from './routes/polls.js';
@@ -20,6 +21,7 @@ export function createApp({ rateLimits = true } = {}) {
   app.set('views', join(__dirname, 'views'));
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
+  app.locals.formatDateTime = (date) => formatDateTime(date, config.timeZone);
 
   app.use(securityHeaders);
   app.use(express.static(join(__dirname, '..', 'public')));

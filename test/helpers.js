@@ -31,7 +31,10 @@ export async function createPoll(agent, fields = {}) {
     .field('is_nominative', fields.nominative ? 'on' : '')
     .field('is_private', fields.password ? 'on' : '')
     .field('password', fields.password || '')
-    .expect(302);
+    .field('close_at', fields.close_at || '')
+    .field('close_at_utc', fields.close_at_utc || '')
+    .expect(fields.expectStatus || 302);
+  if (fields.expectStatus) return res;
   return res.headers.location.match(/\/polls\/([0-9a-f-]{36})\/manage/)[1];
 }
 

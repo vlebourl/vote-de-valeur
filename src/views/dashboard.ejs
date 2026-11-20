@@ -1,6 +1,5 @@
 <%- include('partials/header', { pageTitle: 'Mes votes' }) %>
 <%
-  function ddmm(d) { if (!d) return null; var x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); }
   var totalBallots = polls.reduce(function (s, p) { return s + (p.ballots || 0); }, 0);
   var now = Date.now();
 %>
@@ -19,7 +18,7 @@
   <div class="poll-cards">
     <% polls.forEach(function (p) {
          var closed = p.status !== 'open' || (p.close_at && new Date(p.close_at).getTime() <= now);
-         var d = ddmm(p.close_at);
+         var d = p.close_at ? formatDateTime(p.close_at) : null;
          var cloture = closed ? (d ? 'clos le ' + d : 'clos') : (d ? 'clôt le ' + d : 'sans clôture');
     %>
       <div class="poll-card <%= closed ? 'is-closed' : '' %>">

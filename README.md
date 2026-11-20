@@ -80,6 +80,7 @@ See [`.env.example`](.env.example). Main variables:
 | `BASE_URL` | Public URL, used in emailed links |
 | `JWT_SECRET`, `EMAIL_HASH_SECRET` | Random secrets, ≥ 32 characters (`openssl rand -hex 32`); required in production |
 | `TRUST_PROXY` | Number of reverse proxies in front of the app (e.g. `1` behind Traefik) |
+| `APP_TIMEZONE` | Time zone used to display dates (default `Europe/Paris`); closing dates are converted from the browser's time zone |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Transactional email provider |
 | `SMTP_DEV_MODE` | `true` prints emails to the console instead of sending them |
 

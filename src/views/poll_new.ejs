@@ -49,6 +49,7 @@
 
     <label for="close_at">Date de clôture (optionnelle)</label>
     <input type="datetime-local" id="close_at" name="close_at">
+    <input type="hidden" id="close_at_utc" name="close_at_utc">
     <div class="field-hint">Passé cette date, plus aucun vote n'est accepté.</div>
   </div>
 
@@ -92,6 +93,14 @@
   });
   document.getElementById('is_private').addEventListener('change', function (e) {
     document.getElementById('pwd-field').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  // La date saisie est dans le fuseau du navigateur : on transmet aussi
+  // l'instant UTC correspondant, que le serveur utilise en priorité.
+  document.querySelector('form[action="/polls"]').addEventListener('submit', function () {
+    var v = document.getElementById('close_at').value;
+    var d = v ? new Date(v) : null;
+    document.getElementById('close_at_utc').value = d && !isNaN(d) ? d.toISOString() : '';
   });
 
   addOption(); addOption(); // deux options par défaut
