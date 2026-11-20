@@ -47,6 +47,10 @@
     </div>
     <div class="field-hint">Vous verrez qui a voté et le détail de chaque bulletin (email, nom, notes). Les votants en sont informés sur le formulaire. Par défaut, le vote est secret.</div>
 
+    <label for="min_ballots_for_results">Masquer les résultats tant qu'il y a moins de … bulletins</label>
+    <input type="number" id="min_ballots_for_results" name="min_ballots_for_results" min="0" max="10000" value="5" style="max-width:140px">
+    <div class="field-hint">Protège le secret du vote : avec 1 ou 2 bulletins, les totaux révèlent ces votes. 0 = toujours visibles.</div>
+
     <label for="close_at">Date de clôture (optionnelle)</label>
     <input type="datetime-local" id="close_at" name="close_at">
     <input type="hidden" id="close_at_utc" name="close_at_utc">

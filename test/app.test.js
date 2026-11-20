@@ -259,3 +259,51 @@ test('inscription antérieure à la normalisation reconnue (ancienne empreinte)'
   const { rows } = await query('SELECT COUNT(*)::int AS n, bool_and(voted_at IS NOT NULL) AS voted FROM poll_voters WHERE poll_id = $1', [pollId]);
   assert.deepEqual(rows[0], { n: 1, voted: true });
 });
+
+test('seuil de publication : résultats masqués partout tant qu\'il manque des bulletins', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent, { min_ballots: '' }); // champ vide : seuil par défaut (5)
+  const { rows } = await query('SELECT min_ballots_for_results FROM polls WHERE id = $1', [pollId]);
+  assert.equal(rows[0].min_ballots_for_results, 5);
+  await agent.post(`/polls/${pollId}/edit`).type('form').send({ title: 'Où partir ?', min_ballots_for_results: '2' }).expect(302);
+
+  const alice = `${unique('seuil-a')}@test.local`;
+  const ballotA = await requestBallot(app, pollId, alice);
+  const tokenA = ballotA.split('/').pop();
+  await submitBallot(app, ballotA, { Lyon: 2, Marseille: -2 });
+
+  // Un seul bulletin : rien ne doit trahir son contenu.
+  const page = await request(app).get(`/vote/${pollId}/results/${tokenA}`).expect(200);
+  assert.match(page.text, /Résultats masqués/);
+  assert.ok(!/res-score/.test(page.text), 'aucun total affiché');
+  const api = await request(app).get(`/api/polls/${pollId}/results?token=${tokenA}`).expect(200);
+  assert.equal(api.body.hidden, true);
+  assert.deepEqual(api.body.options, []);
+  assert.equal(lastMail(alice, 'confirmation').results, null, 'confirmation sans résultats');
+  const manage = await agent.get(`/polls/${pollId}/manage`).expect(200);
+  assert.match(manage.text, /Résultats masqués/);
+  assert.equal((await agent.get(`/polls/${pollId}/results.json`).expect(200)).body.hidden, true);
+
+  // Seuil atteint : résultats publiés.
+  await submitBallot(app, await requestBallot(app, pollId, `${unique('seuil-b')}@test.local`), { Lyon: 1 });
+  const after = await request(app).get(`/api/polls/${pollId}/results?token=${tokenA}`).expect(200);
+  assert.equal(after.body.hidden, false);
+  assert.equal(after.body.options.find((o) => o.label === 'Lyon').total, 3);
+});
+
+test('seuil en scrutin nominatif : l\'organisateur voit tout, pas les votants', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent, { nominative: true, min_ballots: '3' });
+  const ballot = await requestBallot(app, pollId, `${unique('nomi')}@test.local`, { name: 'N' });
+  await submitBallot(app, ballot, { Lyon: 1 });
+  assert.equal((await agent.get(`/polls/${pollId}/results.json`).expect(200)).body.hidden, false);
+  const token = ballot.split('/').pop();
+  assert.equal((await request(app).get(`/api/polls/${pollId}/results?token=${token}`).expect(200)).body.hidden, true);
+});
+
+test('seuil invalide refusé dans le formulaire', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const res = await agent.post(`/polls/${pollId}/edit`).type('form').send({ title: 'T', min_ballots_for_results: '-1' }).expect(302);
+  assert.match(decodeURIComponent(res.headers.location), /err=Seuil/);
+});

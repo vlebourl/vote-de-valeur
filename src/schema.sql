@@ -143,3 +143,17 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   revoked_at   TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+
+-- === Seuil de publication des résultats ===
+-- Tant que le scrutin compte moins de bulletins que ce seuil, les résultats ne
+-- sont montrés à personne (un total calculé sur 1 ou 2 bulletins révèle ces
+-- votes). Exception : l'organisateur d'un scrutin nominatif voit déjà tout.
+-- 0 = pas de seuil (comportement des scrutins créés avant cette option).
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS min_ballots_for_results INT NOT NULL DEFAULT 0;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'polls_min_ballots_for_results_check') THEN
+    ALTER TABLE polls ADD CONSTRAINT polls_min_ballots_for_results_check
+      CHECK (min_ballots_for_results BETWEEN 0 AND 10000);
+  END IF;
+END $$;

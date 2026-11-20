@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-11-20
+
+### Added
+- **Results publication threshold** (`min_ballots_for_results`, 5 by default for new polls, editable on the management
+  page and through the API): below it, results are hidden everywhere — voter page, live updates, organiser page, API,
+  confirmation email — and only the ballot count is shown. In a nominative poll the organiser still sees everything;
+  the threshold then applies to voters. Polls created before this version keep a threshold of 0.
+
 ## 1.0.0 — 2026-11-20
 
 First public release.

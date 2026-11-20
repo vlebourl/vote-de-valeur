@@ -20,6 +20,7 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
   - any poll can also be **private** (link + password).
 - **Secret or nominative ballot**: by default nobody, not even the organiser, can link a ballot to a voter. A poll can be switched to nominative, in which case voters are warned on the ballot.
 - **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email.
+- **Publication threshold**: results stay hidden, for voters and organiser alike, until a poll reaches a minimum number of ballots (5 by default): with one or two ballots, totals would reveal how people voted.
 - **Ranking**: sum of scores, abstention counts as 0, ties share the same rank ("1224" ranking).
 - **REST API** for organisers (token auth, OpenAPI docs): see below.
 
@@ -32,7 +33,7 @@ In a secret poll the database never holds anything that ties a voter to their ba
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
 - ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
 
-Limits, stated plainly: the HMAC cannot be reversed, but whoever holds the server key can check whether a *given* address took part (not how it voted); this is inherent to detecting duplicates. Someone owning several mailboxes can vote several times. Someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: in a very small poll (one or two voters), or between two reads around a single new ballot, totals can reveal how someone voted.
+Limits, stated plainly: the HMAC cannot be reversed, but whoever holds the server key can check whether a *given* address took part (not how it voted); this is inherent to detecting duplicates. Someone owning several mailboxes can vote several times. Someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: the publication threshold hides them in very small polls, but once it is reached, two reads around a single new ballot can still reveal that ballot to someone who knows who just voted.
 
 ## REST API
 

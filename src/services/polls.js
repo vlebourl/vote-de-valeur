@@ -15,6 +15,9 @@ export const LIMITS = {
   minOptions: 2,
   password: { min: 4, max: 200 },
 };
+// Seuil par défaut des nouveaux scrutins : résultats masqués sous 5 bulletins.
+export const DEFAULT_MIN_BALLOTS = 5;
+export const MAX_MIN_BALLOTS = 10000;
 export const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 export const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 
@@ -40,6 +43,27 @@ export function isClosed(poll) {
   return Boolean(poll.close_at && new Date(poll.close_at) <= new Date());
 }
 
+function checkMinBallots(value) {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_MIN_BALLOTS) {
+    throw invalid(`Seuil de publication des résultats : entier de 0 à ${MAX_MIN_BALLOTS}.`);
+  }
+  return value;
+}
+
+// Les résultats sont-ils visibles pour ce lecteur ? viewer : 'voter' | 'owner'.
+export function resultsVisible(poll, ballotCount, viewer) {
+  if (viewer === 'owner' && poll.is_nominative) return true;
+  return ballotCount >= (poll.min_ballots_for_results || 0);
+}
+
+// Résultats tels qu'un lecteur a le droit de les voir : sous le seuil, le
+// nombre de bulletins seulement, aucune note ni aucun classement.
+export async function visibleResults(poll, viewer) {
+  const { options, ballotCount } = await computeResults(poll.id);
+  const visible = resultsVisible(poll, ballotCount, viewer);
+  return { visible, ballotCount, threshold: poll.min_ballots_for_results || 0, options: visible ? options : [] };
+}
+
 export async function listPolls(ownerId) {
   const { rows } = await query(
     `SELECT p.*, (SELECT COUNT(*) FROM ballots b WHERE b.poll_id = p.id)::int AS ballots
@@ -51,7 +75,7 @@ export async function listPolls(ownerId) {
   return rows;
 }
 
-// input : { title, description, isPrivate, password, isNominative, authMode,
+// input : { title, description, isPrivate, password, isNominative, authMode, minBallots,
 //           closeAt (Date|null), options: [{ label, description, image }] }
 export async function createPoll(ownerId, input) {
   const title = checkLength(text(input.title), LIMITS.title, 'Titre');
@@ -72,13 +96,14 @@ export async function createPoll(ownerId, input) {
   if (input.closeAt !== null && input.closeAt !== undefined && !(input.closeAt instanceof Date && !Number.isNaN(input.closeAt.getTime()))) {
     throw invalid('Date de clôture invalide.');
   }
+  const minBallots = input.minBallots === undefined || input.minBallots === null ? DEFAULT_MIN_BALLOTS : checkMinBallots(input.minBallots);
   const passwordHash = isPrivate ? await hashPassword(password) : null;
 
   return tx(async (client) => {
     const { rows } = await client.query(
-      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative, auth_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [ownerId, title, description, isPrivate, passwordHash, input.closeAt || null, Boolean(input.isNominative), authMode]
+      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative, auth_mode, min_ballots_for_results)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [ownerId, title, description, isPrivate, passwordHash, input.closeAt || null, Boolean(input.isNominative), authMode, minBallots]
     );
     const id = rows[0].id;
     for (let i = 0; i < options.length; i++) {
@@ -180,6 +205,7 @@ export async function updatePoll(poll, changes) {
     set('status', changes.status);
   }
   if (changes.isNominative !== undefined) set('is_nominative', Boolean(changes.isNominative));
+  if (changes.minBallots !== undefined) set('min_ballots_for_results', checkMinBallots(changes.minBallots));
   if (!sets.length) return poll;
 
   values.push(poll.id);

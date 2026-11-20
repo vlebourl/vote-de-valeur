@@ -198,6 +198,7 @@ export function openapi(baseUrl) {
             is_nominative: { type: 'boolean' },
             auth_mode: { enum: ['email', 'name'] },
             close_at: { type: ['string', 'null'], format: 'date-time' },
+            min_ballots_for_results: { type: 'integer', description: 'Résultats masqués tant que le scrutin compte moins de bulletins (0 = toujours visibles).' },
             created_at: { type: 'string', format: 'date-time' },
             vote_url: { type: 'string', format: 'uri', description: 'Lien à diffuser aux votants.' },
             manage_url: { type: 'string', format: 'uri' },
@@ -228,6 +229,10 @@ export function openapi(baseUrl) {
             password: { type: 'string', minLength: 4, maxLength: 200, description: 'Obligatoire si is_private.' },
             is_nominative: { type: 'boolean', default: false },
             close_at: { type: ['string', 'null'], format: 'date-time', description: 'ISO 8601 avec fuseau.' },
+            min_ballots_for_results: {
+              type: 'integer', minimum: 0, maximum: 10000, default: 5,
+              description: 'Résultats masqués (votants comme organisateur) tant que le scrutin compte moins de bulletins : avec 1 ou 2 bulletins, les totaux révéleraient ces votes. En scrutin nominatif, le seuil ne vaut que pour les votants.',
+            },
           },
           example: {
             title: 'Destination du séminaire',
@@ -243,6 +248,7 @@ export function openapi(baseUrl) {
             close_at: { type: ['string', 'null'], format: 'date-time', description: 'null pour retirer la clôture automatique.' },
             status: { enum: ['open', 'closed'] },
             is_nominative: { type: 'boolean', description: 'Passer en nominatif ne dé-anonymise pas les bulletins déjà déposés.' },
+            min_ballots_for_results: { type: 'integer', minimum: 0, maximum: 10000 },
           },
         },
         Option: {
@@ -273,6 +279,8 @@ export function openapi(baseUrl) {
             poll_id: { type: 'string', format: 'uuid' },
             is_closed: { type: 'boolean' },
             ballot_count: { type: 'integer' },
+            results_hidden: { type: 'boolean', description: 'Seuil de publication non atteint : options vide.' },
+            min_ballots_for_results: { type: 'integer' },
             participation: ref('Participation'),
             options: {
               type: 'array',

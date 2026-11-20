@@ -6,8 +6,7 @@ import { hashEmail, verifyPassword } from '../auth.js';
 import { newToken, hashToken, openWithToken } from '../tokens.js';
 import { requireUuidParam } from '../security.js';
 import { sendVoteConfirmation } from '../mailer.js';
-import { computeResults } from '../results.js';
-import { isClosed } from '../services/polls.js';
+import { isClosed, visibleResults } from '../services/polls.js';
 import { sendVoterLink, normalizeEmail, resultsUrl } from '../services/voters.js';
 
 const router = Router();
@@ -224,12 +223,14 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   const recipient = voter.email || openWithToken(token, voter.email_sealed);
   if (recipient) {
     try {
-      const { options: results } = await computeResults(poll.id);
+      // Résultats joints seulement s'ils sont publiables (seuil de bulletins atteint).
+      const { visible, options: results, threshold } = await visibleResults(poll, 'voter');
       await sendVoteConfirmation({
         to: recipient,
         pollTitle: poll.title,
         myScores,
-        results: results.map((o) => ({ label: o.label, total: o.total, rank: o.rank })),
+        results: visible ? results.map((o) => ({ label: o.label, total: o.total, rank: o.rank })) : null,
+        threshold,
         permalink: resultsUrl(poll.id, token),
       });
     } catch (err) {
@@ -259,9 +260,9 @@ router.get('/vote/:id/results/:token', async (req, res) => {
     return res.redirect(`/vote/${poll.id}/ballot/${req.params.token}`);
   }
 
-  const { options, ballotCount } = await computeResults(poll.id);
+  const { options, ballotCount, visible, threshold } = await visibleResults(poll, 'voter');
   res.render('results', {
-    poll, options, ballotCount, token: req.params.token, closed: isClosed(poll),
+    poll, options, ballotCount, visible, threshold, token: req.params.token, closed: isClosed(poll),
     justVoted: req.query.v === '1',
     permalink: resultsUrl(poll.id, req.params.token),
   });
@@ -271,8 +272,9 @@ router.get('/vote/:id/results/:token', async (req, res) => {
 router.get('/api/polls/:id/results', async (req, res) => {
   const voter = await getVoterByToken(req.params.id, String(req.query.token || ''));
   if (!voter || !voter.voted_at) return res.status(403).json({ error: 'forbidden' });
-  const { options, ballotCount } = await computeResults(req.params.id);
-  res.json({ options, ballotCount });
+  const poll = await getPoll(req.params.id);
+  const { options, ballotCount, visible, threshold } = await visibleResults(poll, 'voter');
+  res.json({ options, ballotCount, hidden: !visible, threshold });
 });
 
 export default router;

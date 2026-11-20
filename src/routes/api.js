@@ -44,6 +44,7 @@ function pollJson(p, extra = {}) {
     is_nominative: p.is_nominative,
     auth_mode: p.auth_mode,
     close_at: iso(p.close_at),
+    min_ballots_for_results: p.min_ballots_for_results,
     created_at: iso(p.created_at),
     vote_url: `${config.baseUrl}/vote/${p.id}`,
     manage_url: `${config.baseUrl}/polls/${p.id}/manage`,
@@ -80,6 +81,13 @@ function optString(b, key, { required = false } = {}) {
     return undefined;
   }
   if (typeof v !== 'string') throw invalid(`« ${key} » doit être une chaîne.`);
+  return v;
+}
+
+function optInteger(b, key) {
+  const v = b[key];
+  if (v === undefined) return undefined;
+  if (!Number.isInteger(v)) throw invalid(`« ${key} » doit être un entier.`);
   return v;
 }
 
@@ -214,7 +222,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
   });
 
   router.post('/polls', async (req, res) => {
-    const b = body(req, ['title', 'description', 'options', 'auth_mode', 'is_private', 'password', 'is_nominative', 'close_at']);
+    const b = body(req, ['title', 'description', 'options', 'auth_mode', 'is_private', 'password', 'is_nominative', 'close_at', 'min_ballots_for_results']);
     const authMode = optString(b, 'auth_mode');
     if (authMode !== undefined && authMode !== 'email' && authMode !== 'name') {
       throw invalid('« auth_mode » : "email" ou "name".');
@@ -228,6 +236,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
       password: optString(b, 'password'),
       isNominative: optBoolean(b, 'is_nominative'),
       closeAt: optDate(b, 'close_at') ?? null,
+      minBallots: optInteger(b, 'min_ballots_for_results'),
     });
     const poll = await polls.getOwnedPoll(req.api.user.id, id);
     res.status(201).location(`${config.baseUrl}/api/v1/polls/${id}`)
@@ -242,7 +251,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
 
   router.patch('/polls/:pollId', async (req, res) => {
     const poll = await owned(req);
-    const b = body(req, ['title', 'description', 'close_at', 'status', 'is_nominative']);
+    const b = body(req, ['title', 'description', 'close_at', 'status', 'is_nominative', 'min_ballots_for_results']);
     const status = optString(b, 'status');
     if (status !== undefined && status !== 'open' && status !== 'closed') throw invalid('« status » : "open" ou "closed".');
     const updated = await polls.updatePoll(poll, {
@@ -251,6 +260,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
       closeAt: optDate(b, 'close_at'),
       status,
       isNominative: optBoolean(b, 'is_nominative'),
+      minBallots: optInteger(b, 'min_ballots_for_results'),
     });
     res.json(pollJson(updated, { options: (await polls.listOptions(poll.id)).map(optionJson) }));
   });
@@ -312,11 +322,15 @@ export function createApiRouter({ rateLimits = true } = {}) {
 
   router.get('/polls/:pollId/results', async (req, res) => {
     const poll = await owned(req);
-    const [{ options, ballotCount }, stats] = await Promise.all([polls.computeResults(poll.id), polls.voterStats(poll.id)]);
+    const [{ options, ballotCount, visible, threshold }, stats] = await Promise.all([
+      polls.visibleResults(poll, 'owner'), polls.voterStats(poll.id),
+    ]);
     res.json({
       poll_id: poll.id,
       is_closed: polls.isClosed(poll),
       ballot_count: ballotCount,
+      results_hidden: !visible,
+      min_ballots_for_results: threshold,
       participation: stats,
       options: options.map((o) => ({
         id: o.id, label: o.label, description: o.description,

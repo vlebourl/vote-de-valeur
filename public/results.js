@@ -8,6 +8,13 @@
 
   window.vvRenderResults = function (el, data) {
     if (!el) return;
+    if (data.hidden) {
+      const t = data.threshold || 0, n = data.ballotCount || 0;
+      el.innerHTML = '<div class="results-hidden"><p style="margin:0"><strong>Résultats masqués</strong> jusqu\'à ' + t +
+        ' bulletin' + (t > 1 ? 's' : '') + ' (' + n + ' pour l\'instant).</p><p class="muted" style="font-size:13px;margin:6px 0 0">' +
+        'Avec si peu de bulletins, les totaux révéleraient comment chacun a voté. Ils s\'afficheront automatiquement une fois le seuil atteint.</p></div>';
+      return;
+    }
     const opts = data.options || [];
     let maxAbs = 1;
     opts.forEach((o) => { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });

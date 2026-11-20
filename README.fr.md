@@ -20,6 +20,7 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
   - et tout scrutin peut être **privé** (lien + mot de passe).
 - **Vote secret ou nominatif** : par défaut, personne, pas même l'organisateur, ne peut relier un bulletin à un votant. Un scrutin peut passer en nominatif ; les votants en sont alors avertis sur le bulletin.
 - **Résultats** invisibles avant d'avoir voté (pas d'influence), puis affichés **en direct** via un lien personnel permanent, aussi envoyé dans l'email de confirmation.
+- **Seuil de publication** : les résultats restent masqués, pour les votants comme pour l'organisateur, tant que le scrutin n'a pas atteint un nombre minimal de bulletins (5 par défaut) : avec un ou deux bulletins, les totaux révéleraient les votes.
 - **Classement** : somme des notes, abstention = 0, ex æquo au même rang (méthode « 1224 »).
 - **API REST** pour les organisateurs (jetons, documentation OpenAPI) : voir plus bas.
 
@@ -32,7 +33,7 @@ En scrutin secret, la base ne contient rien qui relie un votant à son bulletin 
 - pour envoyer la confirmation, l'email est gardé **chiffré avec une clé dérivée du jeton du votant** (AES-256-GCM, HKDF). Le serveur ne peut le déchiffrer qu'au moment où le votant ouvre son lien pour voter, puis l'efface ;
 - les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour.
 
-Limites, dites franchement : le HMAC ne se « déchiffre » pas, mais qui détient la clé du serveur peut vérifier si une adresse *donnée* a participé (pas pour qui elle a voté) ; c'est inhérent à la détection des doublons. Une personne qui possède plusieurs boîtes peut voter plusieurs fois. Quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : dans un tout petit scrutin (un ou deux votants), ou entre deux lectures encadrant un seul nouveau bulletin, les totaux peuvent révéler un vote.
+Limites, dites franchement : le HMAC ne se « déchiffre » pas, mais qui détient la clé du serveur peut vérifier si une adresse *donnée* a participé (pas pour qui elle a voté) ; c'est inhérent à la détection des doublons. Une personne qui possède plusieurs boîtes peut voter plusieurs fois. Quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : le seuil de publication les masque dans les tout petits scrutins, mais une fois le seuil atteint, deux lectures encadrant un seul nouveau bulletin peuvent encore le révéler à qui sait qui vient de voter.
 
 ## API REST
 

@@ -49,7 +49,10 @@
     <input type="text" id="title" name="title" value="<%= poll.title %>" required>
     <label for="description">Description (optionnelle)</label>
     <textarea id="description" name="description" placeholder="Contexte, consignes…"><%= poll.description %></textarea>
-    <button class="btn btn-sm" type="submit" style="margin-top:10px">Enregistrer le titre / la description</button>
+    <label for="min_ballots_for_results">Résultats masqués tant qu'il y a moins de … bulletins</label>
+    <input type="number" id="min_ballots_for_results" name="min_ballots_for_results" min="0" max="10000" value="<%= poll.min_ballots_for_results %>" style="max-width:140px">
+    <p class="field-hint">Protège le secret du vote : avec 1 ou 2 bulletins, les totaux révèlent ces votes. 0 = résultats toujours visibles<% if (poll.is_nominative) { %> (scrutin nominatif : vous voyez tout, le seuil vaut pour les votants)<% } %>.</p>
+    <button class="btn btn-sm" type="submit" style="margin-top:10px">Enregistrer</button>
   </form>
 
   <h3 style="margin:24px 0 4px">Options (<%= options.length %>)</h3>
@@ -163,6 +166,8 @@
   <div id="manage-results" style="margin-top:16px">
     <% if (ballotCount === 0) { %>
       <p class="muted">Aucun bulletin pour l'instant.</p>
+    <% } else if (!resultsVisible) { %>
+      <%- include('partials/results_hidden', { threshold: threshold, ballotCount: ballotCount }) %>
     <% } else { %>
       <%- include('partials/results_table', { options: results, ballotCount: ballotCount }) %>
     <% } %>

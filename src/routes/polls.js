@@ -39,6 +39,13 @@ function uploadSingle(req, res, next) {
   });
 }
 
+// Champ de formulaire → entier (le service valide les bornes) ; vide = défaut.
+function parseMinBallots(raw) {
+  const text = String(raw ?? '').trim();
+  if (text === '') return undefined;
+  return /^\d+$/.test(text) ? Number(text) : NaN;
+}
+
 function manageUrl(id, { ok, err } = {}) {
   const qs = ok ? `?ok=${encodeURIComponent(ok)}` : err ? `?err=${encodeURIComponent(err)}` : '';
   return `/polls/${id}/manage${qs}`;
@@ -106,6 +113,7 @@ router.post('/polls', requireAuth, uploadOptions, async (req, res) => {
       password: req.body.password,
       isNominative: req.body.is_nominative === 'on',
       authMode: req.body.auth_mode,
+      minBallots: parseMinBallots(req.body.min_ballots_for_results),
       closeAt,
       options,
     });
@@ -128,12 +136,12 @@ router.get('/options/:id/image', async (req, res) => {
 router.get('/polls/:id/manage', requireAuth, async (req, res) => {
   const poll = await ownedPoll(req, res);
   if (!poll) return;
-  const [options, { options: results, ballotCount }, stats] = await Promise.all([
-    polls.listOptions(poll.id), polls.computeResults(poll.id), polls.voterStats(poll.id),
+  const [options, { options: results, ballotCount, visible, threshold }, stats] = await Promise.all([
+    polls.listOptions(poll.id), polls.visibleResults(poll, 'owner'), polls.voterStats(poll.id),
   ]);
   const participants = poll.is_nominative ? await polls.listParticipants(poll) : null;
   res.render('poll_manage', {
-    poll, options, results, ballotCount, participants,
+    poll, options, results, ballotCount, participants, resultsVisible: visible, threshold,
     voterStats: { invited: stats.requested, voted: stats.voted },
     baseUrl: config.baseUrl,
     notice: req.query.ok || null,
@@ -145,8 +153,8 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
 router.get('/polls/:id/results.json', requireAuth, async (req, res) => {
   const poll = await ownedPoll(req, res);
   if (!poll) return;
-  const { options, ballotCount } = await polls.computeResults(poll.id);
-  res.json({ options, ballotCount });
+  const { options, ballotCount, visible, threshold } = await polls.visibleResults(poll, 'owner');
+  res.json({ options, ballotCount, hidden: !visible, threshold });
 });
 
 router.post('/polls/:id/nominative', requireAuth, (req, res) => manageAction(req, res, async (poll) => {
@@ -159,6 +167,7 @@ router.post('/polls/:id/nominative', requireAuth, (req, res) => manageAction(req
 
 router.post('/polls/:id/edit', requireAuth, (req, res) => manageAction(req, res, (poll) => polls.updatePoll(poll, {
   title: req.body.title ?? '', description: req.body.description ?? '',
+  minBallots: req.body.min_ballots_for_results === undefined ? undefined : parseMinBallots(req.body.min_ballots_for_results),
 }).then(() => null), 'Titre et description mis à jour.'));
 
 router.post('/polls/:id/options', requireAuth, uploadSingle, (req, res) => manageAction(req, res, (poll) => polls.addOption(poll, {

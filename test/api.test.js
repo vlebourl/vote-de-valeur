@@ -24,7 +24,7 @@ async function client(scope = 'write') {
 }
 
 const newPoll = (call, extra = {}) => call('post', '/polls')
-  .send({ title: 'Destination', options: ['Annecy', 'Lyon', { label: 'Bordeaux', description: 'Océan' }], ...extra });
+  .send({ title: 'Destination', options: ['Annecy', 'Lyon', { label: 'Bordeaux', description: 'Océan' }], min_ballots_for_results: 0, ...extra });
 
 describe('authentification et jetons', () => {
   test('sans jeton, jeton mal formé ou cookie de session seul : 401', async () => {
@@ -321,6 +321,32 @@ describe('votants et résultats', () => {
     const res = await call('post', `/polls/${poll.id}/invitations`)
       .send({ recipients: ['Alice <alice@test.local>', 'a(x)@test.local', 'a@test.local, b@test.local'] }).expect(422);
     assert.deepEqual(res.body.rejected.map((r) => r.reason), ['invalid_email', 'invalid_email', 'invalid_email']);
+  });
+});
+
+describe('seuil de publication', () => {
+  test('défaut à 5, résultats masqués, modifiable, bornes', async () => {
+    const { call } = await client();
+    const { body: poll } = await call('post', '/polls').send({ title: 'T', options: ['A', 'B'] }).expect(201);
+    assert.equal(poll.min_ballots_for_results, 5);
+    const voter = `${unique('api-seuil')}@test.local`;
+    await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [voter] }).expect(200);
+    await submitBallot(app, pathOf(lastMail(voter, 'magic-link').url), { A: 2 });
+
+    const hidden = await call('get', `/polls/${poll.id}/results`).expect(200);
+    assert.equal(hidden.body.results_hidden, true);
+    assert.equal(hidden.body.ballot_count, 1);
+    assert.deepEqual(hidden.body.options, []);
+
+    const upd = await call('patch', `/polls/${poll.id}`).send({ min_ballots_for_results: 1 }).expect(200);
+    assert.equal(upd.body.min_ballots_for_results, 1);
+    const shown = await call('get', `/polls/${poll.id}/results`).expect(200);
+    assert.equal(shown.body.results_hidden, false);
+    assert.equal(shown.body.options[0].total, 2);
+
+    await call('patch', `/polls/${poll.id}`).send({ min_ballots_for_results: -1 }).expect(400);
+    await call('patch', `/polls/${poll.id}`).send({ min_ballots_for_results: '3' }).expect(400);
+    await call('post', '/polls').send({ title: 'T', options: ['A', 'B'], min_ballots_for_results: 10001 }).expect(400);
   });
 });
 

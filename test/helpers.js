@@ -32,6 +32,7 @@ export async function createPoll(agent, fields = {}) {
     .field('is_private', fields.password ? 'on' : '')
     .field('password', fields.password || '')
     .field('close_at', fields.close_at || '')
+    .field('min_ballots_for_results', fields.min_ballots ?? '0')
     .field('close_at_utc', fields.close_at_utc || '')
     .expect(fields.expectStatus || 302);
   if (fields.expectStatus) return res;

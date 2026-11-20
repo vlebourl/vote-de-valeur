@@ -10,7 +10,11 @@
     <% if (!closed) { %><span class="live-pill"><i></i>En direct</span><% } else { %><span class="badge badge-closed">vote clos</span><% } %>
   </div>
   <div id="results-container" style="margin-top:16px">
-    <%- include('partials/results_table', { options: options, ballotCount: ballotCount }) %>
+    <% if (typeof visible === 'undefined' || visible) { %>
+      <%- include('partials/results_table', { options: options, ballotCount: ballotCount }) %>
+    <% } else { %>
+      <%- include('partials/results_hidden', { threshold: threshold, ballotCount: ballotCount }) %>
+    <% } %>
   </div>
 </div>
 
