@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.0 — 2026-11-20
+
+### Added
+- **Change your vote, without ever seeing it again.** In email mode, the confirmation email now carries a personal
+  "Modifier mon vote" link, valid until the poll closes. It opens a blank ballot covering the same choices; the new
+  scores replace the previous ones in full. Previous scores are never shown, so nobody can prove how they voted, and a
+  vote cast under pressure can be corrected later.
+- The link holds a random key drawn at vote time and sent only by email; the database keeps its SHA-256 hash on the
+  ballot, never on the voter record. Neither a database dump nor the server keys can find the ballot of an address.
+  Supplementary ballots (choices added later) get their own link. Name-mode votes and ballots cast before 1.3 cannot
+  be changed.
+
+### Changed
+- Ballot warning, recap, results page and "Vos données" now explain that a vote cannot be reviewed but can be changed
+  with the confirmation link (name mode: still final).
+
 ## 1.2.1 — 2026-11-20
 
 ### Fixed

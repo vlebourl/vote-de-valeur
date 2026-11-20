@@ -73,26 +73,33 @@ export async function sendNewOptionsNotice({ to, pollTitle, labels, url }) {
   return transporter.sendMail({ from: FROM, to, subject, text, html });
 }
 
-// Confirmation envoyée au votant après son vote : l'enregistrement et son lien
-// personnel, rien d'autre. Ni résultats, ni ses propres notes : un email se
-// conserve et se transfère (y compris dans le dossier « Envoyés » de
-// l'expéditeur) et ne doit révéler aucun vote.
-export async function sendVoteConfirmation({ to, pollTitle, permalink, supplement = false }) {
+// Confirmation envoyée au votant après son vote : l'enregistrement, son lien
+// de résultats et son lien de modification, rien d'autre. Ni résultats, ni ses
+// propres notes : un email se conserve et se transfère (y compris dans le
+// dossier « Envoyés » de l'expéditeur) et ne doit révéler aucun vote.
+export async function sendVoteConfirmation({ to, pollTitle, permalink, editUrl = null, supplement = false }) {
   const subject = `Confirmation de votre vote : « ${pollTitle} »`;
   const what = supplement ? 'Vos notes pour les nouveaux choix ont bien été enregistrées' : 'Votre vote a bien été enregistré';
+  const editText = editUrl
+    ? `Vous pouvez ${supplement ? 'modifier ces notes' : 'modifier votre vote'} jusqu'à la clôture avec ce lien (le nouveau bulletin remplace entièrement le précédent ; vos anciennes notes ne sont jamais réaffichées) :\n${editUrl}\n\n`
+    : '';
   const text = `Bonjour,\n\n${what} pour « ${pollTitle} ». Merci !\n\n` +
     `Pour préserver le secret du vote, cet email ne contient pas vos notes.\n\n` +
-    `Suivez les résultats avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n— Vote de valeur`;
+    `Suivez les résultats avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n` +
+    editText +
+    `Ces liens sont personnels : quiconque les détient peut suivre les résultats ou remplacer votre vote. Ne les partagez pas.\n\n— Vote de valeur`;
+  const button = (url, label, color) => `<a href="${url}" style="display:inline-block;margin:0 8px 8px 0;padding:12px 20px;background:${color};color:#fff;border-radius:8px;text-decoration:none">${label}</a>`;
   const html = `<p>Bonjour,</p>
 <p>${what} pour <strong>« ${escapeHtml(pollTitle)} »</strong>. Merci !</p>
 <p style="color:#666;font-size:13px">Pour préserver le secret du vote, cet email ne contient pas vos notes.</p>
-<p><a href="${permalink}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Suivre les résultats</a></p>
-<p style="color:#666;font-size:13px">Lien personnel à conserver, ne le partagez pas :<br>${permalink}</p>`;
+<p>${button(permalink, 'Suivre les résultats', '#4f46e5')}${editUrl ? button(editUrl, 'Modifier mon vote', '#475569') : ''}</p>
+${editUrl ? `<p style="color:#666;font-size:13px">« Modifier mon vote » reste valable jusqu'à la clôture : le nouveau bulletin remplace entièrement le précédent, et vos anciennes notes ne sont jamais réaffichées.</p>` : ''}
+<p style="color:#666;font-size:13px">Ces liens sont personnels : quiconque les détient peut suivre les résultats${editUrl ? ' ou remplacer votre vote' : ''}. Ne les partagez pas.<br>Résultats : ${permalink}${editUrl ? `<br>Modification : ${editUrl}` : ''}</p>`;
 
   if (DEV_MODE) {
-    keepInOutbox({ kind: 'confirmation', to, permalink, text, html });
+    keepInOutbox({ kind: 'confirmation', to, permalink, editUrl, text, html });
     console.log('\n📧 [SMTP_DEV_MODE] Confirmation de vote non envoyée :');
-    console.log(`   → ${to} : ${permalink}\n`);
+    console.log(`   → ${to} : ${permalink}${editUrl ? ` | modifier : ${editUrl}` : ''}\n`);
     return { devMode: true };
   }
   return transporter.sendMail({ from: FROM, to, subject, text, html });

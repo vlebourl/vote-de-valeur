@@ -27,7 +27,8 @@ const TOKEN_MATCH = `(pv.token_hash = $2 OR EXISTS (
 
 async function getVoterByToken(pollId, token) {
   const { rows } = await query(
-    `SELECT pv.* FROM poll_voters pv WHERE pv.poll_id = $1 AND ${TOKEN_MATCH}`,
+    `SELECT pv.*, EXISTS (SELECT 1 FROM voter_notifications n WHERE n.voter_id = pv.id) AS subscribed
+       FROM poll_voters pv WHERE pv.poll_id = $1 AND ${TOKEN_MATCH}`,
     [pollId, hashToken(token)]
   );
   return rows[0] || null;
@@ -140,13 +141,15 @@ router.post('/vote/:id/name', async (req, res) => {
 // notés (une note exigée pour chacun), ce qui empêche un bulletin vide ou
 // partiel et la notation ultérieure d'un choix déjà présenté.
 const SHOWN_TTL = '2d';
-function signShown(poll, voter, options) {
-  return jwt.sign({ p: poll.id, v: voter.id, o: options.map((o) => o.id) }, config.jwtSecret, { expiresIn: SHOWN_TTL });
+// subject : { v: id du votant } pour un vote, { b: id du bulletin } pour une modification.
+function signShown(poll, subject, options) {
+  return jwt.sign({ p: poll.id, ...subject, o: options.map((o) => o.id) }, config.jwtSecret, { expiresIn: SHOWN_TTL });
 }
-function readShown(raw, poll, voter) {
+function readShown(raw, poll, subject) {
   try {
     const d = jwt.verify(String(raw || ''), config.jwtSecret);
-    return d.p === poll.id && d.v === voter.id && Array.isArray(d.o) ? d.o : null;
+    if (d.p !== poll.id || !Array.isArray(d.o)) return null;
+    return Object.entries(subject).every(([k, v]) => d[k] === v) ? d.o : null;
   } catch { return null; }
 }
 
@@ -165,13 +168,23 @@ async function ballotOptions(poll, voter) {
 
 function renderBallot(res, poll, voter, token, options, extra = {}) {
   return res.status(extra.status || 200).render('ballot', {
-    poll, options, token,
+    poll, options,
+    action: `/vote/${poll.id}/ballot/${token}`,
     supplement: Boolean(voter.voted_at),
     canNotify: canNotify(poll, voter),
-    shown: signShown(poll, voter, options),
+    // Modifiable ensuite si une confirmation (avec le lien de modification)
+    // peut être envoyée : il faut une adresse lisible maintenant.
+    editable: canConfirm(voter),
+    editing: false, nominative: poll.is_nominative,
+    shown: signShown(poll, { v: voter.id }, options),
     modeChanged: false, error: null,
     ...extra,
   });
+}
+
+// Une confirmation pourra-t-elle partir ? (même règle que l'adresse du destinataire)
+function canConfirm(voter) {
+  return Boolean(voter.email || voter.email_sealed || voter.subscribed);
 }
 
 // Peut-on proposer « Prévenez-moi si un choix est ajouté » ? Il faut une adresse
@@ -222,10 +235,10 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     if (!options.length) return res.redirect(`/vote/${poll.id}/results/${token}`);
     return renderBallot(res, poll, voter, token, options, { error, status });
   };
-  const shown = readShown(req.body.shown, poll, voter);
+  const shown = readShown(req.body.shown, poll, { v: voter.id });
   if (!shown) return again('Ce bulletin a expiré ou a changé : vérifiez vos notes et validez à nouveau.', 409);
   if (req.body.final_ack !== 'on') {
-    return again('Cochez la case confirmant que vous avez compris que votre vote est définitif.');
+    return again('Cochez la case confirmant que vous avez vérifié vos notes.');
   }
 
   // Adresse du votant, si elle est disponible maintenant (confirmation, abonnement) :
@@ -233,6 +246,9 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   // abonnement aux avis (complément après le vote).
   const recipient = voter.email || openWithToken(token, voter.email_sealed) || await subscribedEmail(voter.id);
   const wantsNotice = req.body.notify === 'on' && poll.auth_mode === 'email';
+  // Clé de modification : envoyée seulement dans la confirmation, la base n'en
+  // garde que l'empreinte, sur le bulletin. Sans destinataire, pas de clé.
+  const editKey = recipient ? newToken() : null;
 
   const outcome = await tx(async (client) => {
     // Scrutin relu sous verrou partagé : une clôture ou une bascule de mode
@@ -280,9 +296,10 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     // Scrutin secret : bulletin sans lien vers le votant ni horodatage, et date
     // de vote arrondie au jour, pour qu'on ne puisse pas les rapprocher.
     const b = await client.query(
-      `INSERT INTO ballots (poll_id, voter_id, created_at, is_supplement)
-       VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4) RETURNING id`,
-      [poll.id, poll.is_nominative ? voter.id : null, poll.is_nominative, supplement]
+      `INSERT INTO ballots (poll_id, voter_id, created_at, is_supplement, edit_hash)
+       VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5) RETURNING id`,
+      [poll.id, poll.is_nominative ? voter.id : null, poll.is_nominative, supplement,
+        editKey ? hashToken(editKey) : null]
     );
     for (const [optionId, score] of scores) {
       await client.query('INSERT INTO ballot_scores (ballot_id, option_id, score) VALUES ($1,$2,$3)',
@@ -323,6 +340,7 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     try {
       await sendVoteConfirmation({
         to: recipient, pollTitle: poll.title, permalink: resultsUrl(poll.id, token),
+        editUrl: editUrl(poll.id, editKey),
         supplement: outcome === 'supplemented',
       });
     } catch (err) {
@@ -331,6 +349,104 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   }
 
   res.redirect(`/vote/${poll.id}/results/${token}?v=${outcome === 'supplemented' ? 2 : 1}`);
+});
+
+// --- Modification d'un bulletin, par le lien de l'email de confirmation ---
+// Le lien porte la clé de modification ; la base n'en connaît que l'empreinte,
+// posée sur le bulletin. Le bulletin est remplacé en entier, et les notes
+// précédentes ne sont jamais réaffichées (secret du vote : personne ne peut
+// prouver comment il a voté). Rien n'est écrit sur l'inscription du votant.
+function editUrl(pollId, key) {
+  return key ? `${config.baseUrl}/vote/${pollId}/modifier/${key}` : null;
+}
+
+const EDIT_BALLOT_SQL = `SELECT id, voter_id, is_supplement FROM ballots WHERE poll_id = $1 AND edit_hash = $2`;
+
+// Choix du bulletin encore existants (dans l'ordre du scrutin), sans les notes.
+async function editOptions(ballotId, client = { query }) {
+  const { rows } = await client.query(
+    `SELECT o.id, o.label, o.description, o.position, (o.image_data IS NOT NULL) AS has_image
+       FROM ballot_scores s JOIN options o ON o.id = s.option_id
+      WHERE s.ballot_id = $1 ORDER BY o.position`, [ballotId]
+  );
+  return rows;
+}
+
+function renderEdit(res, poll, ballot, key, options, extra = {}) {
+  return res.status(extra.status || 200).render('ballot', {
+    poll, options,
+    action: `/vote/${poll.id}/modifier/${key}`,
+    supplement: ballot.is_supplement, editing: true, editable: true,
+    canNotify: false, nominative: Boolean(ballot.voter_id),
+    shown: signShown(poll, { b: ballot.id }, options),
+    modeChanged: false, error: null,
+    ...extra,
+  });
+}
+
+router.get('/vote/:id/modifier/:key', async (req, res) => {
+  const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
+  const { rows } = await query(EDIT_BALLOT_SQL, [poll.id, hashToken(req.params.key)]);
+  if (!rows[0]) return res.status(404).render('error', { message: 'Lien de modification invalide.' });
+  if (isClosed(poll)) return res.render('vote_closed', { poll, voted: true });
+  const options = await editOptions(rows[0].id);
+  if (!options.length) return res.status(404).render('error', { message: 'Les choix de ce bulletin ont tous été retirés : il n\'y a plus rien à modifier.' });
+  return renderEdit(res, poll, rows[0], req.params.key, options);
+});
+
+router.post('/vote/:id/modifier/:key', async (req, res) => {
+  const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
+  if (isClosed(poll)) return res.render('vote_closed', { poll, voted: true });
+  const key = req.params.key;
+  const { rows } = await query(EDIT_BALLOT_SQL, [poll.id, hashToken(key)]);
+  const ballot = rows[0];
+  if (!ballot) return res.status(404).render('error', { message: 'Lien de modification invalide.' });
+
+  const again = async (error, status = 400) => {
+    const options = await editOptions(ballot.id);
+    if (!options.length) return res.status(404).render('error', { message: 'Les choix de ce bulletin ont tous été retirés.' });
+    return renderEdit(res, poll, ballot, key, options, { error, status });
+  };
+  const shown = readShown(req.body.shown, poll, { b: ballot.id });
+  if (!shown) return again('Ce bulletin a expiré ou a changé : vérifiez vos notes et validez à nouveau.', 409);
+  if (req.body.final_ack !== 'on') return again('Cochez la case confirmant que vous avez vérifié vos notes.');
+
+  const outcome = await tx(async (client) => {
+    // Même ordre de verrous que le vote : clôture et vote ne se croisent pas.
+    const { rows: current } = await client.query(
+      'SELECT status, close_at FROM polls WHERE id = $1 FOR SHARE', [poll.id]
+    );
+    if (!current[0]) return 'gone';
+    if (isClosed(current[0])) return 'closed';
+    const { rows: locked } = await client.query(
+      'SELECT id FROM ballots WHERE id = $1 AND edit_hash = $2 FOR UPDATE', [ballot.id, hashToken(key)]
+    );
+    if (!locked[0]) return 'gone';
+    // Choix du bulletin relus sous verrou : la modification porte sur tous,
+    // exactement ceux présentés.
+    const targets = await editOptions(ballot.id, client);
+    const shownSet = new Set(shown);
+    if (!targets.length || targets.some((o) => !shownSet.has(o.id))) return 'stale';
+    const scores = [];
+    for (const opt of targets) {
+      const raw = req.body[`score_${opt.id}`];
+      if (typeof raw !== 'string' || !/^(-2|-1|0|1|2)$/.test(raw)) return 'incomplete';
+      scores.push([opt.id, Number(raw)]);
+    }
+    for (const [optionId, score] of scores) {
+      await client.query('UPDATE ballot_scores SET score = $3 WHERE ballot_id = $1 AND option_id = $2',
+        [ballot.id, optionId, score]);
+    }
+    return 'edited';
+  });
+
+  if (outcome === 'gone') return res.status(404).render('error', { message: 'Lien de modification invalide.' });
+  if (outcome === 'closed') return res.render('vote_closed', { poll, voted: true });
+  if (outcome === 'stale') return again('Les choix ont changé pendant que vous votiez : vérifiez vos notes et validez à nouveau.', 409);
+  if (outcome === 'incomplete') return again('Attribuez une note à chaque choix (0 = neutre).');
+  res.render('ballot_edited', { poll, supplement: ballot.is_supplement });
 });
 
 // --- Résultats sans jeton : réservés aux votants → on renvoie à la page du vote ---

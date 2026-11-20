@@ -167,7 +167,7 @@ test('bulletin : confirmation obligatoire, note exigée pour chaque choix prése
   const pollId = await createPoll(agent);
   const path = await requestBallot(app, pollId, `${unique('ack')}@test.local`);
   const page = await request(app).get(path).expect(200);
-  assert.match(page.text, /ni les modifier ni les revoir/);
+  assert.match(page.text, /compris que je ne pourrai pas les revoir/);
   const fields = hiddenFields(page.text);
   const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
   const scores = Object.fromEntries(ids.map((id) => [`score_${id}`, '1']));

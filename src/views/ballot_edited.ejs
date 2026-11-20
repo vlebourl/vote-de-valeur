@@ -1,0 +1,8 @@
+<%- include('partials/header', { pageTitle: poll.title }) %>
+<h1><%= poll.title %></h1>
+<div class="notice"><%= supplement ? 'Vos notes ont bien été remplacées.' : 'Votre vote a bien été remplacé.' %> Merci !</div>
+<div class="card">
+  <p style="margin-top:0">Vos nouvelles notes comptent à la place des précédentes. Elles ne sont pas affichées ici et ne vous seront pas envoyées, pour préserver le secret du vote.</p>
+  <p class="muted" style="margin-bottom:0">Le lien « Modifier mon vote » de votre email de confirmation reste valable jusqu'à la clôture. Les résultats se suivent avec le lien « Suivre les résultats » du même email.</p>
+</div>
+<%- include('partials/footer') %>

@@ -198,3 +198,11 @@ CREATE TABLE IF NOT EXISTS voter_extra_tokens (
   voter_id   UUID NOT NULL REFERENCES poll_voters(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_voter_extra_tokens_voter ON voter_extra_tokens(voter_id);
+
+-- === Modification du vote (1.3) ===
+-- Clé de modification d'un bulletin : un secret tiré au moment du vote, envoyé
+-- au votant dans son email de confirmation. La base n'en garde que l'empreinte
+-- (SHA-256), posée sur le bulletin, sans lien avec l'inscription : ni la base,
+-- ni la clé du serveur ne permettent de retrouver le bulletin d'une adresse.
+ALTER TABLE ballots ADD COLUMN IF NOT EXISTS edit_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ballots_edit_hash ON ballots(edit_hash) WHERE edit_hash IS NOT NULL;
