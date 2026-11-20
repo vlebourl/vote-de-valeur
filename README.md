@@ -1,104 +1,100 @@
-# Vote de valeur
+# Vote de valeur — range voting for groups
 
-Plateforme web pour organiser des **votes de valeur** (range voting) : chaque votant note *chaque* option de **−2 à +2**. Le classement se fait à la **somme des notes** (les égalités sont autorisées).
+[![CI](https://github.com/vlebourl/vote-de-valeur/actions/workflows/ci.yml/badge.svg)](https://github.com/vlebourl/vote-de-valeur/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Principes
+*[Version française](README.fr.md)*
 
-- **Créateurs** : compte (email + mot de passe), tableau de bord de leurs votes.
-- **Votants** : identification par email → **1 email = 1 vote** (lien magique unique envoyé par email). Pas de compte requis.
-- **Votes** identifiés par **UUID**. Public (URL seule) ou privé (URL + mot de passe).
-- **Résultats** : invisibles avant d'avoir voté (pas d'influence), puis visibles **en temps réel** une fois le bulletin soumis. Le vote est **définitif**.
-- **Secret du bulletin** : l'email n'est jamais stocké en clair lié au bulletin. Seul un HMAC (`email_hash`) sert à garantir l'unicité, dans une table séparée des scores.
+A web app to run **range votes** (*vote de valeur*): every voter rates **every** option from **−2 to +2**, and options are ranked by the **sum of their scores**. Instead of picking one favourite, voters express a nuanced opinion on each choice, which removes the "tactical vote" problem of single-choice polls. The interface is in French.
 
-## Stack
+| Landing | Ballot | Live results |
+|---|---|---|
+| ![Landing page](docs/screenshots/landing.png) | ![Ballot](docs/screenshots/ballot.png) | ![Results](docs/screenshots/results.png) |
 
-Node.js + Express · PostgreSQL (`pg`) · EJS (rendu serveur) · nodemailer (SMTP) · auth cookie httpOnly (JWT + bcrypt). Un conteneur applicatif + un service Postgres.
+## Features
 
-## Développement local
+- **Organisers** create an account, then polls with text and/or image options, a description and an optional closing date. Title, description and options stay editable after opening.
+- **Three ways to identify voters**, chosen per poll:
+  - **email magic link** (default): one email = one vote, no account needed;
+  - **name only** (lightweight mode for trusted groups): one name = one vote;
+  - any poll can also be **private** (link + password).
+- **Secret or nominative ballot**: by default nobody, not even the organiser, can link a ballot to a voter. A poll can be switched to nominative, in which case voters are warned on the ballot.
+- **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email.
+- **Ranking**: sum of scores, abstention counts as 0, ties share the same rank ("1224" ranking).
 
-Prérequis : Node ≥ 20 et un Postgres accessible (ou utilisez `docker compose`).
+## How ballot secrecy works
+
+In a secret poll the database never holds anything that ties a voter to their ballot:
+
+- the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person;
+- the magic-link token is stored only as a **SHA-256 hash**, so a database leak gives access to no ballot;
+- to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
+- ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
+
+Limits, stated plainly: someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day.
+
+## Tech stack
+
+Node.js 20+ · Express 5 · PostgreSQL (`pg`) · EJS server-side rendering · nodemailer (SMTP) · httpOnly JWT session cookie + bcrypt. No front-end build step: a little vanilla JS for live results.
+
+Security hardening: UUID validation on every route parameter, same-origin check on every write (CSRF), per-IP rate limiting on login, sign-up, magic links and poll passwords, no open redirect, security headers (`Referrer-Policy: same-origin` keeps tokens out of `Referer`), and the app refuses to start in production with missing or weak secrets.
+
+## Run it
+
+### With Docker Compose (app + PostgreSQL)
 
 ```bash
-cp .env.example .env      # puis éditez les valeurs
+npm run init-env          # creates .env with freshly generated secrets (needs Node)
+docker compose up --build # http://localhost:3000
+```
+
+Migrations run automatically at start-up. With `SMTP_DEV_MODE=true` (the default), no email is sent: magic links are printed in the app logs (`docker compose logs app`).
+
+### Locally
+
+Requires Node ≥ 20.19 and a PostgreSQL database.
+
+```bash
 npm install
-npm run migrate           # crée les tables
-npm run dev               # démarre sur http://localhost:3000
+npm run init-env   # then set DATABASE_URL in .env
+npm run migrate
+npm run dev        # http://localhost:3000, restarts on change
 ```
 
-En dev, laissez `SMTP_DEV_MODE=true` : les emails ne sont pas envoyés, les **liens magiques sont affichés dans la console**.
-
-### Avec Docker Compose (app + Postgres)
+## Tests
 
 ```bash
-docker compose up --build
+npm test     # unit + integration tests against a real PostgreSQL
+npm run lint
 ```
 
-L'app applique automatiquement les migrations au démarrage puis écoute sur le port 3000.
+`npm test` starts a throwaway embedded PostgreSQL, so nothing needs to be installed. Set `TEST_DATABASE_URL` to use an existing database instead (as the CI does). The suite covers the full voting flow, ballot secrecy at the database level, double-vote races, migration of a pre-existing database, access control, CSRF, open redirects and rate limiting. CI runs lint, tests (Node 20 and 22), `npm audit` and a Docker build on every push.
 
-## Déploiement sur Coolify
+## Configuration
 
-1. **Base de données** : créez une ressource *PostgreSQL* dans Coolify. Notez l'URL de connexion interne.
-2. **Application** : nouvelle ressource à partir de ce dépôt Git. Coolify détecte le `Dockerfile`.
-   - Le conteneur exécute `node src/migrate.js && node src/server.js` : les tables sont créées/à jour à chaque déploiement.
-3. **Variables d'environnement** (onglet *Environment Variables*) :
+See [`.env.example`](.env.example). Main variables:
 
-   | Variable | Valeur |
-   |---|---|
-   | `DATABASE_URL` | URL de connexion du Postgres Coolify |
-   | `BASE_URL` | URL publique de l'app, ex. `https://vote.mondomaine.fr` |
-   | `JWT_SECRET` | longue chaîne aléatoire |
-   | `EMAIL_HASH_SECRET` | longue chaîne aléatoire (différente) |
-   | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | identifiants du service transactionnel (Resend, Postmark, Brevo…) |
-   | `SMTP_FROM` | ex. `Vote de valeur <noreply@mondomaine.fr>` |
-   | `SMTP_DEV_MODE` | `false` en production |
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BASE_URL` | Public URL, used in emailed links |
+| `JWT_SECRET`, `EMAIL_HASH_SECRET` | Random secrets, ≥ 32 characters (`openssl rand -hex 32`); required in production |
+| `TRUST_PROXY` | Number of reverse proxies in front of the app (e.g. `1` behind Traefik) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Transactional email provider |
+| `SMTP_DEV_MODE` | `true` prints emails to the console instead of sending them |
 
-   Générer un secret : `openssl rand -hex 32`.
-4. **Port** : l'app écoute sur `3000`. Configurez le domaine/port dans Coolify. Healthcheck disponible sur `/healthz`.
-5. **Email** : configurez SPF/DKIM du domaine expéditeur chez votre fournisseur SMTP pour une bonne délivrabilité.
+## Deployment
 
-### Première mise en ligne (pas à pas)
+The `Dockerfile` builds a small production image (non-root user, `npm ci`, healthcheck on `/healthz`, which also checks the database). It works on any container host. Notes for [Coolify](https://coolify.io) are in the French README.
 
-1. Créez un dépôt Git distant (GitHub/GitLab, ou le Git intégré de Coolify) et poussez le code :
-   ```bash
-   git remote add origin <url-du-depot>
-   git push -u origin main
-   ```
-2. Dans Coolify : **+ New Resource → Application → Public/Private Repository**, sélectionnez le dépôt. Coolify détecte le `Dockerfile`.
-3. Ajoutez une ressource **PostgreSQL** (+ New Resource → Database → PostgreSQL) et copiez son URL de connexion interne.
-4. Renseignez les variables d'environnement de l'application (voir tableau ci-dessus). `SMTP_DEV_MODE=false` en prod.
-5. Réglez le port exposé sur `3000`, associez votre domaine, déployez.
+## Data model
 
-### Mettre à jour (nouvelles versions)
+- `users`: organiser accounts.
+- `polls`: title, description, privacy and password hash, nominative flag, identification mode, status, closing date.
+- `options`: poll options; images are stored in PostgreSQL, so there is no file volume to manage.
+- `poll_voters`: participation (`email_hash`, `token_hash`, encrypted email until the vote, dates), unique per `(poll_id, email_hash)`.
+- `ballots` + `ballot_scores`: anonymous ballots and their −2…+2 scores.
 
-Deux utilitaires sont fournis :
+## Licence
 
-- `deploy/coolify.env` (à créer depuis `deploy/coolify.env.example`) : y mettre l'URL Coolify, un jeton API et l'UUID de l'app. Ce fichier est ignoré par git.
-- `deploy/deploy.sh` (ou `npm run deploy`) : commit + push, puis déclenche le redéploiement Coolify via l'API.
-
-```bash
-cp deploy/coolify.env.example deploy/coolify.env   # puis remplir les valeurs
-npm run deploy "ma nouvelle version"
-```
-
-Si l'auto-deploy Coolify est activé sur la branche (webhook Git), un simple `git push` suffit et le script se contente alors du push.
-
-> Les images des options sont stockées dans Postgres (colonne `options.image_data`). Elles survivent donc aux redéploiements tant que la base Coolify est conservée — aucun volume de fichiers à gérer.
-
-## Modèle de données
-
-- `users` — comptes créateurs.
-- `polls` — un scrutin (titre, description, privé + `password_hash`, `status`, `close_at`).
-- `options` — options d'un scrutin.
-- `poll_voters` — participation (`email_hash`, `magic_token`, `verified_at`, `voted_at`), contrainte d'unicité `(poll_id, email_hash)`.
-- `ballots` + `ballot_scores` — bulletins anonymes et leurs notes (`-2..+2`), non liés à l'identité.
-
-## Calcul du résultat
-
-Somme des notes par option, **abstention = 0** (chaque bulletin porte une note par option, 0 par défaut). Tri décroissant. Rangs avec égalités (méthode « 1224 » : deux ex æquo partagent le même rang).
-
-## Pistes d'évolution
-
-- Choix du mode de calcul par scrutin (somme / moyenne / médiane — le *jugement majoritaire* résiste mieux au vote stratégique).
-- Import d'une liste d'emails invités + relances.
-- Export CSV des résultats, page publique de résultats après clôture.
-- Limitation de débit sur la demande de lien (anti-spam).
+[MIT](LICENSE) © 2026 Vincent Le Bourlot
