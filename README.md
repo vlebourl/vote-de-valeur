@@ -27,15 +27,19 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
 
 ## How ballot secrecy works
 
-In a secret poll the database never holds anything that ties a voter to their ballot:
+In a secret poll, no table links a voter to their ballot, and nothing the organiser can see does either:
 
 - the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person. Aliases of the same mailbox count as one (`+tag` suffixes everywhere; dots and `googlemail.com` for Gmail);
 - the magic-link token is stored only as a **SHA-256 hash**, so a database leak gives access to no ballot;
 - a voter who asks to be notified of new choices has their address kept **encrypted with a server key**, in a table linked to their registration and never to their ballot, erased when the poll closes; the organiser only ever sees counts;
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
-- ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
+- ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day;
+- emails (confirmation, notices) **never contain any score**: a mailbox, including the sender's *Sent* folder, keeps no vote. A vote can be neither changed nor reviewed once cast, and voters confirm this explicitly before submitting;
+- results stay hidden below a minimum number of ballots, for the poll and for each choice added along the way.
 
-Limits, stated plainly: the HMAC cannot be reversed, but whoever holds the server key can check whether a *given* address took part (not how it voted); this is inherent to detecting duplicates. Someone owning several mailboxes can vote several times. Someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: the publication threshold hides them in very small polls, but once it is reached, two reads around a single new ballot can still reveal that ballot to someone who knows who just voted.
+The [`/donnees`](src/views/donnees.ejs) page explains all of this to voters.
+
+Limits, stated plainly: the HMAC cannot be reversed, but whoever holds the server key can check whether a *given* address took part (not how it voted); this is inherent to detecting duplicates. Someone owning several mailboxes can vote several times. **The server administrator is not protected against**: PostgreSQL stamps every row written by one transaction with the same internal transaction id, and a voter's registration update and ballot are written together; with direct access to the database files, or by watching the server while votes are cast, the host can correlate them. A logical export does not contain these ids, but row order may still hint at the order of votes in a tiny poll. Protecting against the host would require mixing ballots in batches, which is not implemented. Live results are an aggregate: the publication threshold hides them in very small polls, but once it is reached, two reads around a single new ballot can still reveal that ballot to someone who knows who just voted.
 
 ## REST API
 

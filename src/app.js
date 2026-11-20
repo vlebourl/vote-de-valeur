@@ -47,6 +47,7 @@ export function createApp({ rateLimits = true } = {}) {
   app.get('/api/docs', (req, res) => res.render('api_docs'));
 
   app.get('/', (req, res) => res.render('landing'));
+  app.get('/donnees', (req, res) => res.render('donnees'));
 
   // Santé (healthcheck Coolify / Docker) : vérifie aussi l'accès à la base.
   app.get('/healthz', async (req, res) => {

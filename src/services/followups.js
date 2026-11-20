@@ -34,13 +34,17 @@ export function openEmail(sealed) {
 }
 
 // Options du scrutin que ce votant n'a pas encore notées (dans l'ordre du scrutin).
+// rated = NULL : vote antérieur à la version 1.2, dont on ignore les options
+// notées ; seules les options créées depuis (created_at renseigné) sont proposées.
+const MISSING_SQL = `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
+   FROM options
+  WHERE poll_id = $1
+    AND NOT (id = ANY(COALESCE($2::uuid[], '{}')))
+    AND ($2::uuid[] IS NOT NULL OR created_at IS NOT NULL)
+  ORDER BY position`;
+
 export async function missingOptions(pollId, ratedIds, client = { query }) {
-  if (!ratedIds) return [];
-  const { rows } = await client.query(
-    `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
-       FROM options WHERE poll_id = $1 AND NOT (id = ANY($2::uuid[])) ORDER BY position`,
-    [pollId, ratedIds]
-  );
+  const { rows } = await client.query(MISSING_SQL, [pollId, ratedIds ?? null]);
   return rows;
 }
 
@@ -63,19 +67,19 @@ export async function subscribe(client, poll, voterId, email) {
 // Votants abonnés à prévenir : ceux qui ont des choix non notés dont ils n'ont
 // pas encore été avertis.
 async function pending(poll) {
-  const { rows: options } = await query('SELECT id, label FROM options WHERE poll_id = $1 ORDER BY position', [poll.id]);
   const { rows } = await query(
-    `SELECT vn.voter_id, vn.email_enc, vn.notified_option_ids, pv.rated_option_ids
+    `SELECT vn.voter_id, vn.notified_option_ids, pv.rated_option_ids
        FROM voter_notifications vn JOIN poll_voters pv ON pv.id = vn.voter_id
-      WHERE vn.poll_id = $1 AND pv.voted_at IS NOT NULL AND pv.rated_option_ids IS NOT NULL`,
+      WHERE vn.poll_id = $1 AND pv.voted_at IS NOT NULL`,
     [poll.id]
   );
-  return rows.map((r) => {
-    const rated = new Set(r.rated_option_ids);
+  const out = [];
+  for (const r of rows) {
+    const missing = await missingOptions(poll.id, r.rated_option_ids);
     const notified = new Set(r.notified_option_ids);
-    const missing = options.filter((o) => !rated.has(o.id));
-    return { ...r, missing, fresh: missing.filter((o) => !notified.has(o.id)) };
-  }).filter((r) => r.fresh.length > 0);
+    if (missing.some((o) => !notified.has(o.id))) out.push(r.voter_id);
+  }
+  return out;
 }
 
 export async function pendingCount(poll) {
@@ -89,38 +93,58 @@ export async function subscriberCount(poll) {
 
 // Prévient les abonnés concernés : nouveau lien personnel (il remplace le
 // précédent, y compris le lien des résultats) et liste des nouveaux choix.
-// Le remplacement du lien n'est validé que si l'email part.
-// Renvoie des nombres seulement : { eligible, sent, failed }.
-export async function notifySubscribers(poll, { max = Infinity } = {}) {
-  if (isClosed(poll)) return { eligible: 0, sent: 0, failed: 0, closed: true };
-  const list = await pending(poll);
+// Pour chaque votant, tout est revérifié sous verrou (scrutin ouvert, choix
+// encore à noter, pas déjà signalés) : deux envois simultanés ne prévoient
+// pas deux fois la même personne. Le remplacement du lien n'est validé que si
+// l'email part. take(n) réserve n emails sur le quota (false : quota atteint).
+// Renvoie des nombres seulement : { eligible, sent, failed, remaining }.
+export async function notifySubscribers(poll, { take = () => true } = {}) {
+  const candidates = await pending(poll);
   let sent = 0;
   let failed = 0;
-  for (const r of list.slice(0, max)) {
-    const email = openEmail(r.email_enc);
-    if (!email) { failed += 1; continue; }
+  let stopped = false;
+  for (const voterId of candidates) {
+    if (!take(1)) { stopped = true; break; }
     const token = newToken();
     try {
-      await tx(async (client) => {
-        await client.query('UPDATE poll_voters SET token_hash = $1 WHERE id = $2', [hashToken(token), r.voter_id]);
+      const done = await tx(async (client) => {
+        const { rows: p } = await client.query('SELECT status, close_at, title FROM polls WHERE id = $1 FOR SHARE', [poll.id]);
+        if (!p[0] || isClosed(p[0])) return 'closed';
+        const { rows: v } = await client.query(
+          `SELECT pv.rated_option_ids, vn.email_enc, vn.notified_option_ids
+             FROM poll_voters pv JOIN voter_notifications vn ON vn.voter_id = pv.id
+            WHERE pv.id = $1 FOR UPDATE OF pv, vn`,
+          [voterId]
+        );
+        if (!v[0]) return 'skip';
+        const missing = await missingOptions(poll.id, v[0].rated_option_ids, client);
+        const notified = new Set(v[0].notified_option_ids);
+        const fresh = missing.filter((o) => !notified.has(o.id));
+        if (!fresh.length) return 'skip';
+        const email = openEmail(v[0].email_enc);
+        if (!email) throw new Error('adresse illisible');
+        await client.query('UPDATE poll_voters SET token_hash = $1 WHERE id = $2', [hashToken(token), voterId]);
         await client.query(
           `UPDATE voter_notifications
               SET notified_option_ids = ARRAY(SELECT DISTINCT unnest(notified_option_ids || $1::uuid[]))
             WHERE voter_id = $2`,
-          [r.fresh.map((o) => o.id), r.voter_id]
+          [fresh.map((o) => o.id), voterId]
         );
         await sendNewOptionsNotice({
-          to: email, pollTitle: poll.title, labels: r.missing.map((o) => o.label || '(image)'),
+          to: email, pollTitle: p[0].title, labels: missing.map((o) => o.label || '(image)'),
           url: ballotUrl(poll.id, token),
         });
+        return 'sent';
       });
-      sent += 1;
+      if (done === 'closed') { stopped = true; break; }
+      if (done === 'sent') sent += 1;
     } catch (err) {
       console.error('Avis de nouveau choix non envoyé :', err.code || err.name, err.responseCode || '');
       failed += 1;
     }
   }
-  return { eligible: list.length, sent, failed };
+  const remaining = stopped ? await pendingCount(poll) : 0;
+  return { eligible: candidates.length, sent, failed, remaining };
 }
 
 // Effacement des adresses des scrutins clos (statut ou date de clôture passée).

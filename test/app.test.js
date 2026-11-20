@@ -5,6 +5,7 @@ import pool from '../src/db.js';
 import { hashToken } from '../src/tokens.js';
 import {
   newApp, organizer, createPoll, requestBallot, submitBallot, ballotForm, lastMail, pathOf, unique, query,
+  hiddenFields,
 } from './helpers.js';
 
 after(() => pool.end());
@@ -201,7 +202,7 @@ test('bascule secret → nominatif pendant le vote : bulletin refusé et réaffi
   const ballot = await requestBallot(app, pollId, email);
   const page = await request(app).get(ballot).expect(200);
   const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
-  const form = { mode: 'secret', ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
+  const form = { ...hiddenFields(page.text), ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
 
   await agent.post(`/polls/${pollId}/nominative`).type('form').send({ nominative: 'on' }).expect(302);
   const refused = await request(app).post(ballot).type('form').send(form).expect(409);
@@ -295,15 +296,15 @@ test('seuil de publication : résultats masqués partout tant qu\'il manque des 
   assert.match(shown.text, /res-score/);
 });
 
-test('email de confirmation : ses propres notes, jamais les résultats', async () => {
+test('email de confirmation : ni notes ni résultats', async () => {
   const { agent } = await organizer(app);
-  const pollId = await createPoll(agent); // seuil 0 : résultats publiés
+  const pollId = await createPoll(agent);
   const voter = `${unique('confirm')}@test.local`;
   await submitBallot(app, await requestBallot(app, pollId, voter), { Lyon: 2, Marseille: -1 });
   const mail = lastMail(voter, 'confirmation');
-  assert.match(mail.text, /Lyon : \+2/);
-  assert.match(mail.text, /Marseille : -1/);
-  assert.doesNotMatch(mail.text + mail.html, /Résultats actuels|rang|total/i);
+  assert.match(mail.text, /Votre vote a bien été enregistré/);
+  assert.match(mail.text, /ne contient pas vos notes/);
+  assert.doesNotMatch(mail.text + mail.html, /Lyon|Marseille|\+2|Résultats actuels|rang|total/i);
 });
 
 test('seuil en scrutin nominatif : l\'organisateur voit tout, pas les votants', async () => {

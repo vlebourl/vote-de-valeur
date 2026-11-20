@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import pool from '../src/db.js';
 import {
-  newApp, organizer, createPoll, requestBallot, submitBallot, lastMail, pathOf, unique, query,
+  newApp, organizer, createPoll, requestBallot, submitBallot, lastMail, pathOf, unique, query, hiddenFields,
 } from './helpers.js';
 
 after(() => pool.end());
@@ -79,7 +79,8 @@ test('sans abonnement : la page de résultats propose de noter le nouveau choix'
   assert.match(results.text, /Nouveau choix depuis votre vote/);
   assert.match(results.text, /Toulouse/);
   // Le complément ignore toute tentative de renoter un ancien choix.
-  const form = { mode: 'secret' };
+  const supplementPage = await request(app).get(path).expect(200);
+  const form = hiddenFields(supplementPage.text);
   const { rows: opts } = await query('SELECT id, label FROM options WHERE poll_id = $1', [pollId]);
   for (const o of opts) form[`score_${o.id}`] = o.label === 'Toulouse' ? '1' : '-2';
   await request(app).post(path).type('form').send(form).expect(302);
@@ -95,7 +96,7 @@ test('option ajoutée pendant qu\'un bulletin est ouvert : elle reste à noter e
   const page = await request(app).get(path).expect(200);
   const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
   await addOption(agent, pollId, 'Brest');
-  const form = { mode: 'secret', ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
+  const form = { ...hiddenFields(page.text), ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
   await request(app).post(path).type('form').send(form).expect(302);
   const supplement = await request(app).get(path).expect(200);
   assert.deepEqual([...supplement.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Brest']);
@@ -128,14 +129,80 @@ test('scrutin nominatif : notes du complément fusionnées dans le détail des p
   assert.match(manage.text, /<span class="total neg">-1<\/span>/);
 });
 
-test('mode « nom » : un nom déjà votant peut noter un choix ajouté', async () => {
+test('mode « nom » : ressaisir un nom ne permet pas de prendre la main sur un complément', async () => {
   const { agent } = await organizer(app);
   const pollId = await createPoll(agent, { auth_mode: 'name' });
   const first = await request(app).post(`/vote/${pollId}/name`).type('form').send({ name: 'Omar' }).expect(302);
   await submitBallot(app, first.headers.location, { Lyon: 1 });
-  await request(app).post(`/vote/${pollId}/name`).type('form').send({ name: 'Omar' }).expect(409);
   await addOption(agent, pollId, 'Metz');
-  const again = await request(app).post(`/vote/${pollId}/name`).type('form').send({ name: 'Omar' }).expect(302);
-  const page = await request(app).get(again.headers.location).expect(200);
-  assert.deepEqual([...page.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Metz']);
+  await request(app).post(`/vote/${pollId}/name`).type('form').send({ name: 'Omar' }).expect(409);
+  // Le détenteur du lien, lui, peut noter le nouveau choix.
+  const own = await request(app).get(first.headers.location).expect(200);
+  assert.deepEqual([...own.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Metz']);
+});
+
+test('choix ajouté : total et rang masqués tant qu\'il a moins de notes que le seuil', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent, { min_ballots: '2' });
+  const paths = [];
+  for (const n of [1, 2]) {
+    const p = await requestBallot(app, pollId, `${unique('choix-seuil' + n)}@test.local`);
+    await submitBallot(app, p, { Lyon: 1 });
+    paths.push(p);
+  }
+  await addOption(agent, pollId, 'Caen');
+  await submitBallot(app, paths[0], { Caen: -2 });
+  const r = await request(app).get(`/api/polls/${pollId}/results?token=${tokenOf(paths[0])}`).expect(200);
+  const caen = r.body.options.find((o) => o.label === 'Caen');
+  assert.deepEqual([caen.pending, caen.total, caen.rank], [true, null, null]);
+  const page = await request(app).get(`/vote/${pollId}/results/${tokenOf(paths[0])}`).expect(200);
+  assert.match(page.text, /résultat masqué jusqu'à 2 notes \(1 pour l'instant\)/);
+  await submitBallot(app, paths[1], { Caen: 1 });
+  const after = await request(app).get(`/api/polls/${pollId}/results?token=${tokenOf(paths[0])}`).expect(200);
+  assert.equal(after.body.options.find((o) => o.label === 'Caen').total, -1);
+});
+
+test('bulletin : confirmation obligatoire, note exigée pour chaque choix présenté', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const path = await requestBallot(app, pollId, `${unique('ack')}@test.local`);
+  const page = await request(app).get(path).expect(200);
+  assert.match(page.text, /ni les modifier ni les revoir/);
+  const fields = hiddenFields(page.text);
+  const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
+  const scores = Object.fromEntries(ids.map((id) => [`score_${id}`, '1']));
+  const noAck = await request(app).post(path).type('form').send({ ...fields, final_ack: '', ...scores }).expect(400);
+  assert.match(noAck.text, /Cochez la case/);
+  await request(app).post(path).type('form').send({ ...fields }).expect(400); // bulletin vide
+  const partial = { ...fields, [`score_${ids[0]}`]: '2' };
+  await request(app).post(path).type('form').send(partial).expect(400);
+  await request(app).post(path).type('form').send({ ...fields, shown: 'faux', ...scores }).expect(409);
+  assert.equal((await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId])).rows[0].n, 0);
+  await request(app).post(path).type('form').send({ ...fields, ...scores }).expect(302);
+});
+
+test('avis : deux envois simultanés ne préviennent qu\'une fois', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const email = `${unique('simul')}@test.local`;
+  await submitBallot(app, await requestBallot(app, pollId, email), { Lyon: 1 }, { notify: 'on' });
+  await addOption(agent, pollId, 'Pau');
+  const { devOutbox } = await import('../src/mailer.js');
+  const before = devOutbox.filter((m) => m.to === email && m.kind === 'new-options').length;
+  await Promise.all([1, 2, 3].map(() => agent.post(`/polls/${pollId}/notify`).type('form').send({})));
+  const after = devOutbox.filter((m) => m.to === email && m.kind === 'new-options').length;
+  assert.equal(after - before, 1);
+});
+
+test('vote enregistré après la clôture refusé, abonnement non recréé', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const path = await requestBallot(app, pollId, `${unique('tard')}@test.local`);
+  const page = await request(app).get(path).expect(200);
+  const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
+  await agent.post(`/polls/${pollId}/status`).type('form').send({ status: 'closed' }).expect(302);
+  await request(app).post(path).type('form')
+    .send({ ...hiddenFields(page.text), notify: 'on', ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) }).expect(200);
+  assert.equal((await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId])).rows[0].n, 0);
+  assert.equal((await query('SELECT COUNT(*)::int AS n FROM voter_notifications WHERE poll_id = $1', [pollId])).rows[0].n, 0);
 });

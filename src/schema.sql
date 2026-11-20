@@ -162,10 +162,11 @@ END $$;
 -- Options déjà notées par chaque votant : la liste des identifiants seulement,
 -- sans aucune note, pour lui proposer de noter les choix ajoutés après son vote.
 ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS rated_option_ids UUID[];
--- Votes antérieurs : on considère que toutes les options actuelles ont été notées.
-UPDATE poll_voters pv
-   SET rated_option_ids = COALESCE((SELECT array_agg(o.id) FROM options o WHERE o.poll_id = pv.poll_id), '{}')
- WHERE pv.voted_at IS NOT NULL AND pv.rated_option_ids IS NULL;
+-- Votes antérieurs à cette version : liste inconnue (NULL). On ne leur propose
+-- alors que les options créées après la migration (created_at renseigné), seule
+-- règle sûre faute d'historique.
+ALTER TABLE options ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+ALTER TABLE options ALTER COLUMN created_at SET DEFAULT now();
 
 -- Bulletin complémentaire : notes des seuls choix ajoutés après le vote. Il ne
 -- compte pas comme un bulletin de plus (nombre de votants inchangé).

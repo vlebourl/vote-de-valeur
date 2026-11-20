@@ -14,14 +14,12 @@ import { ServiceError, invalid, conflict } from '../services/errors.js';
 import * as polls from '../services/polls.js';
 import { authenticateApiToken } from '../services/apiTokens.js';
 import { sendVoterLink, normalizeEmail, canonicalEmail } from '../services/voters.js';
-import { createQuota } from '../services/quota.js';
-import { pendingCount, notifySubscribers } from '../services/followups.js';
+import { takeEmails, EMAILS_PER_HOUR } from '../services/quota.js';
+import { notifySubscribers } from '../services/followups.js';
 import { openapi } from '../api/openapi.js';
 
 export const MAX_INVITATIONS_PER_REQUEST = 100;
-// Emails d'invitation par heure : par organisateur (tous jetons confondus) et
-// pour l'ensemble du service.
-export const INVITATIONS_PER_HOUR = { user: 500, service: Number(process.env.API_INVITATIONS_PER_HOUR) || 2000 };
+export const INVITATIONS_PER_HOUR = EMAILS_PER_HOUR;
 
 class ApiError extends Error {
   constructor(status, code, message, details) {
@@ -180,8 +178,6 @@ export function createApiRouter({ rateLimits = true } = {}) {
     handler: (req, res) => sendError(res, new ApiError(429, 'rate_limited', message)),
   });
   if (rateLimits) router.use(perToken(15, 600, 'Trop de requêtes pour ce jeton. Réessayez plus tard.'));
-  const userQuota = createQuota({ limit: INVITATIONS_PER_HOUR.user, windowMs: 3600_000 });
-  const serviceQuota = createQuota({ limit: INVITATIONS_PER_HOUR.service, windowMs: 3600_000 });
 
   // Corps acceptés : JSON, et multipart pour l'image d'une option.
   router.use((req, res, next) => {
@@ -335,7 +331,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
       participation: stats,
       options: options.map((o) => ({
         id: o.id, label: o.label, description: o.description,
-        total: o.total, rank: o.rank, ballots: o.votes_count, has_image: o.has_image,
+        total: o.total, rank: o.rank, ballots: o.votes_count, has_image: o.has_image, pending: Boolean(o.pending),
       })),
     });
   });
@@ -372,13 +368,8 @@ export function createApiRouter({ rateLimits = true } = {}) {
     }
 
     // Quotas d'emails (tous jetons confondus), réservés avant tout envoi.
-    if (rateLimits && valid.length) {
-      if (!userQuota.take(req.api.user.id, valid.length)) {
-        throw new ApiError(429, 'rate_limited', `Quota d’invitations atteint : ${INVITATIONS_PER_HOUR.user} emails par heure et par organisateur.`);
-      }
-      if (!serviceQuota.take('service', valid.length)) {
-        throw new ApiError(429, 'rate_limited', 'Quota global d’invitations atteint. Réessayez plus tard.');
-      }
+    if (rateLimits && valid.length && !takeEmails(req.api.user.id, valid.length)) {
+      throw new ApiError(429, 'rate_limited', `Quota d’emails atteint : ${INVITATIONS_PER_HOUR.user} par heure et par organisateur (invitations et avis confondus).`);
     }
 
     // Une personne qui a déjà voté n'est pas relancée : son permalien de
@@ -403,17 +394,8 @@ export function createApiRouter({ rateLimits = true } = {}) {
     const poll = await owned(req);
     body(req, []);
     if (polls.isClosed(poll)) throw conflict('Le vote est clôturé.');
-    const eligible = await pendingCount(poll);
-    if (rateLimits && eligible) {
-      if (!userQuota.take(req.api.user.id, eligible)) {
-        throw new ApiError(429, 'rate_limited', `Quota d’emails atteint : ${INVITATIONS_PER_HOUR.user} par heure et par organisateur.`);
-      }
-      if (!serviceQuota.take('service', eligible)) {
-        throw new ApiError(429, 'rate_limited', 'Quota global d’emails atteint. Réessayez plus tard.');
-      }
-    }
-    const r = await notifySubscribers(poll, { max: eligible });
-    res.json({ eligible: r.eligible, sent: r.sent, failed: r.failed });
+    const r = await notifySubscribers(poll, { take: rateLimits ? (n) => takeEmails(req.api.user.id, n) : () => true });
+    res.json({ eligible: r.eligible, sent: r.sent, failed: r.failed, remaining: r.remaining });
   });
 
   router.use((req, res, next) => next(new ApiError(404, 'route_not_found', 'Route inconnue. Voir /api/v1/openapi.json.')));

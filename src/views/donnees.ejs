@@ -1,0 +1,41 @@
+<%- include('partials/header', { pageTitle: 'Vos données — Vote de valeur' }) %>
+<h1>Vos données</h1>
+<p class="lead">Ce que Vote de valeur conserve quand vous votez, comment, combien de temps, et qui peut y accéder. Sans enjoliver.</p>
+
+<div class="card">
+  <h2 style="margin-top:0">Ce qui est conservé</h2>
+  <table class="results">
+    <thead><tr><th>Donnée</th><th>Forme</th><th>Durée</th></tr></thead>
+    <tbody>
+      <tr><td>Votre email (scrutin secret)</td><td>Une <strong>empreinte</strong> (HMAC-SHA256 avec une clé du serveur) pour empêcher un second vote. Les alias d'une même boîte (<code>+suffixe</code>, points Gmail) donnent la même empreinte.</td><td>Tant que le scrutin existe</td></tr>
+      <tr><td>Votre email, avant le vote</td><td><strong>Chiffré</strong> avec une clé tirée de votre lien personnel, pour envoyer la confirmation.</td><td>Effacé dès votre vote enregistré</td></tr>
+      <tr><td>Votre email, si vous cochez « Prévenez-moi »</td><td><strong>Chiffré</strong> avec une clé du serveur, dans une table séparée, rattaché à votre inscription et jamais à votre bulletin.</td><td>Effacé à la clôture du scrutin</td></tr>
+      <tr><td>Votre lien personnel</td><td>Son <strong>empreinte</strong> seulement (SHA-256). Le lien lui-même n'est connu que de vous.</td><td>Tant que le scrutin existe</td></tr>
+      <tr><td>Vos notes</td><td>Dans un <strong>bulletin anonyme</strong> : ni référence à votre inscription, ni heure de dépôt. La date de votre vote est arrondie au jour.</td><td>Tant que le scrutin existe</td></tr>
+      <tr><td>Choix déjà notés</td><td>La liste des choix que vous avez notés, <strong>sans les notes</strong>, pour vous proposer ceux ajoutés ensuite.</td><td>Tant que le scrutin existe</td></tr>
+    </tbody>
+  </table>
+  <p class="field-hint">Scrutin <strong>nominatif</strong> (annoncé sur le bulletin) : votre email, votre nom et vos notes sont visibles par l'organisateur. Mode « par nom » : votre nom n'est conservé qu'en empreinte, sauf en scrutin nominatif.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Qui peut relier votre email à votre vote ? (scrutin secret)</h2>
+  <ul>
+    <li><strong>L'organisateur</strong> : non. Ni par le site, ni par l'API. Il ne voit aucune adresse, aucun bulletin individuel, et les résultats restent masqués tant qu'il y a trop peu de votants (pour l'ensemble, et pour chaque choix ajouté en cours de route).</li>
+    <li><strong>Les autres votants</strong> : non, pour la même raison.</li>
+    <li><strong>Vos emails</strong> : la confirmation et les avis <strong>ne contiennent aucune note</strong>. Ni votre boîte, ni la boîte d'envoi du service ne gardent votre vote.</li>
+    <li><strong>Quelqu'un qui obtiendrait un export de la base, même avec la clé</strong> : il pourrait vérifier si une adresse donnée a participé (en recalculant son empreinte), mais pas lire son vote : rien dans les tables ne relie l'inscription au bulletin. Dans un très petit scrutin, l'ordre des lignes peut toutefois donner un indice.</li>
+    <li><strong>L'administrateur du serveur, avec un accès direct aux fichiers de la base ou en observant le serveur pendant le vote</strong> : techniquement oui. La base de données marque d'un même numéro interne les écritures faites ensemble (votre inscription et votre bulletin), et un serveur voit passer les requêtes. Se protéger de l'hébergeur lui-même demanderait de mélanger les bulletins par lots ; ce n'est pas fait aujourd'hui.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Votre vote est définitif</h2>
+  <p style="margin:0">Une fois validé, il ne peut être ni modifié ni revu : vos notes ne sont gardées nulle part avec votre identité. Seuls des choix ajoutés après votre vote peuvent encore être notés, depuis votre lien personnel.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Vos droits</h2>
+  <p style="margin:0">Pour toute question ou demande (accès, effacement), écrivez à l'organisateur du vote. Le code de l'application est public : <a href="https://github.com/vlebourl/vote-de-valeur">github.com/vlebourl/vote-de-valeur</a>.</p>
+</div>
+<%- include('partials/footer') %>

@@ -73,26 +73,24 @@ export async function sendNewOptionsNotice({ to, pollTitle, labels, url }) {
   return transporter.sendMail({ from: FROM, to, subject, text, html });
 }
 
-// Confirmation envoyée au votant après son vote : le rappel de SES notes et le
-// permalien des résultats. Jamais de résultats dans l'email : un email se
-// transfère et se conserve, et un total figé sur peu de bulletins trahirait des votes.
-export async function sendVoteConfirmation({ to, pollTitle, myScores, permalink, supplement = false }) {
+// Confirmation envoyée au votant après son vote : l'enregistrement et son lien
+// personnel, rien d'autre. Ni résultats, ni ses propres notes : un email se
+// conserve et se transfère (y compris dans le dossier « Envoyés » de
+// l'expéditeur) et ne doit révéler aucun vote.
+export async function sendVoteConfirmation({ to, pollTitle, permalink, supplement = false }) {
   const subject = `Confirmation de votre vote : « ${pollTitle} »`;
-  const what = supplement ? 'Vos notes pour les nouveaux choix' : 'Votre vote';
-  const fmt = (s) => (s > 0 ? '+' + s : String(s));
-  const myLines = myScores.map((o) => `  • ${o.label || '(image)'} : ${fmt(o.score)}`).join('\n');
-  const text = `Bonjour,\n\n${what} pour « ${pollTitle} » ${supplement ? 'ont' : 'a'} bien été enregistré${supplement ? 'es' : ''}. Merci !\n\n` +
-    `${what} :\n${myLines}\n\n` +
-    `Suivez les résultats à tout moment avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n— Vote de valeur`;
-  const myHtml = myScores.map((o) => `<li>${escapeHtml(o.label || '(image)')} : <strong>${fmt(o.score)}</strong></li>`).join('');
+  const what = supplement ? 'Vos notes pour les nouveaux choix ont bien été enregistrées' : 'Votre vote a bien été enregistré';
+  const text = `Bonjour,\n\n${what} pour « ${pollTitle} ». Merci !\n\n` +
+    `Pour préserver le secret du vote, cet email ne contient pas vos notes.\n\n` +
+    `Suivez les résultats avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n— Vote de valeur`;
   const html = `<p>Bonjour,</p>
-<p>${what} pour <strong>« ${escapeHtml(pollTitle)} »</strong> ${supplement ? 'ont' : 'a'} bien été enregistré${supplement ? 'es' : ''}. Merci !</p>
-<p><strong>${what} :</strong></p><ul>${myHtml}</ul>
+<p>${what} pour <strong>« ${escapeHtml(pollTitle)} »</strong>. Merci !</p>
+<p style="color:#666;font-size:13px">Pour préserver le secret du vote, cet email ne contient pas vos notes.</p>
 <p><a href="${permalink}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Suivre les résultats</a></p>
 <p style="color:#666;font-size:13px">Lien personnel à conserver, ne le partagez pas :<br>${permalink}</p>`;
 
   if (DEV_MODE) {
-    keepInOutbox({ kind: 'confirmation', to, permalink, myScores, text, html });
+    keepInOutbox({ kind: 'confirmation', to, permalink, text, html });
     console.log('\n📧 [SMTP_DEV_MODE] Confirmation de vote non envoyée :');
     console.log(`   → ${to} : ${permalink}\n`);
     return { devMode: true };

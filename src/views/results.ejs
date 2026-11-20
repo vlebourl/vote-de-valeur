@@ -19,7 +19,7 @@
   </div>
   <div id="results-container" style="margin-top:16px">
     <% if (typeof visible === 'undefined' || visible) { %>
-      <%- include('partials/results_table', { options: options, ballotCount: ballotCount }) %>
+      <%- include('partials/results_table', { options: options, ballotCount: ballotCount, threshold: threshold }) %>
     <% } else { %>
       <%- include('partials/results_hidden', { threshold: threshold, ballotCount: ballotCount }) %>
     <% } %>

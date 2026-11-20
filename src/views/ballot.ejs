@@ -16,11 +16,14 @@
 <% if (typeof modeChanged !== 'undefined' && modeChanged) { %>
   <div class="error">Le scrutin est passé en mode <strong><%= poll.is_nominative ? 'nominatif' : 'secret' %></strong> pendant que vous votiez : votre bulletin n'a pas été enregistré. Vérifiez vos notes et validez à nouveau.</div>
 <% } %>
-<form method="post" action="/vote/<%= poll.id %>/ballot/<%= token %>">
+<% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+<form method="post" action="/vote/<%= poll.id %>/ballot/<%= token %>" id="ballot-form">
   <%# Mode affiché au votant : le serveur refuse le bulletin s'il a changé entre-temps. %>
   <input type="hidden" name="mode" value="<%= poll.is_nominative ? 'nominative' : 'secret' %>">
+  <%# Liste signée des choix présentés : seuls ceux-là sont notés. %>
+  <input type="hidden" name="shown" value="<%= shown %>">
   <% options.forEach(function (o) { %>
-    <div class="option-block">
+    <div class="option-block" data-label="<%= o.label || '(image)' %>">
       <% if (o.has_image) { %><img class="opt-vote-img" src="/options/<%= o.id %>/image" alt="<%= o.label %>"><% } %>
       <% if (o.label) { %><h3><%= o.label %></h3><% } %>
       <% if (o.description) { %><p class="muted" style="margin:0 0 4px"><%= o.description %></p><% } %>
@@ -34,13 +37,58 @@
     </div>
   <% }) %>
   <% if (typeof canNotify !== 'undefined' && canNotify) { %>
-    <div class="checkbox-row" style="margin:6px 0 16px">
+    <div class="checkbox-row" style="margin:6px 0 4px">
       <input type="checkbox" id="notify" name="notify">
       <label for="notify">Prévenez-moi par email si un choix est ajouté (pour pouvoir le noter)</label>
     </div>
-    <p class="field-hint" style="margin-top:-10px">Votre adresse est alors gardée chiffrée jusqu'à la clôture, sans aucun lien avec votre bulletin, puis effacée. L'organisateur ne la voit pas.</p>
+    <p class="field-hint" style="margin:0 0 14px">Votre adresse est alors gardée chiffrée jusqu'à la clôture, sans lien avec votre bulletin, puis effacée. L'organisateur ne la voit pas. <a href="/donnees">Vos données</a></p>
   <% } %>
+  <div class="final-warning">
+    <p style="margin:0 0 8px"><strong><%= sup ? 'Ces notes sont définitives.' : 'Votre vote est définitif.' %></strong>
+      Vous ne pourrez <strong>ni <%= sup ? 'les' : 'le' %> modifier, ni <%= sup ? 'les' : 'le' %> revoir</strong> après validation : pour préserver le secret du vote, vos notes ne sont conservées nulle part avec votre identité, et ne figurent pas dans l'email de confirmation.</p>
+    <div class="checkbox-row">
+      <input type="checkbox" id="final_ack" name="final_ack" required>
+      <label for="final_ack">J'ai vérifié mes notes et compris que je ne pourrai ni les modifier ni les revoir.</label>
+    </div>
+  </div>
   <button class="btn" type="submit"><%= sup ? 'Valider ces notes' : 'Valider mon vote' %></button>
-  <p class="field-hint">Attention : <%= sup ? 'ces notes sont définitives' : 'votre vote est définitif' %> et ne pourr<%= sup ? 'ont' : 'a' %> pas être modifié<%= sup ? 'es' : '' %>.</p>
 </form>
+
+<dialog id="ballot-recap" class="recap">
+  <h2 style="margin-top:0">Confirmer <%= sup ? 'ces notes' : 'votre vote' %></h2>
+  <p class="muted" style="margin-top:0">Dernière vérification : après validation, vous ne pourrez ni modifier ni revoir ces notes.</p>
+  <ul id="recap-list"></ul>
+  <div class="row-actions">
+    <button type="button" class="btn" id="recap-ok">Je confirme</button>
+    <button type="button" class="btn btn-ghost" id="recap-back">Revenir au bulletin</button>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var form = document.getElementById('ballot-form');
+    var dialog = document.getElementById('ballot-recap');
+    if (!form || !dialog || typeof dialog.showModal !== 'function') return; // sans dialogue : la case suffit
+    var confirmed = false;
+    form.addEventListener('submit', function (e) {
+      if (confirmed) return;
+      e.preventDefault();
+      var list = document.getElementById('recap-list');
+      list.textContent = '';
+      form.querySelectorAll('.option-block').forEach(function (block) {
+        var checked = block.querySelector('input[type=radio]:checked');
+        var v = checked ? Number(checked.value) : 0;
+        var li = document.createElement('li');
+        li.textContent = block.getAttribute('data-label') + ' : ' + (v > 0 ? '+' + v : String(v));
+        list.appendChild(li);
+      });
+      dialog.showModal();
+    });
+    document.getElementById('recap-back').addEventListener('click', function () { dialog.close(); });
+    document.getElementById('recap-ok').addEventListener('click', function () {
+      confirmed = true;
+      dialog.close();
+      form.requestSubmit ? form.requestSubmit() : form.submit();
+    });
+  })();
+</script>
 <%- include('partials/footer') %>

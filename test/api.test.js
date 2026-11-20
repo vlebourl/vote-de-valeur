@@ -332,10 +332,10 @@ describe('avis de nouveaux choix', () => {
     await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [voter] }).expect(200);
     await submitBallot(app, pathOf(lastMail(voter, 'magic-link').url), { Lyon: 1 }, { notify: 'on' });
     const none = await call('post', `/polls/${poll.id}/notifications`).send({}).expect(200);
-    assert.deepEqual(none.body, { eligible: 0, sent: 0, failed: 0 });
+    assert.deepEqual(none.body, { eligible: 0, sent: 0, failed: 0, remaining: 0 });
     await call('post', `/polls/${poll.id}/options`).send({ label: 'Nantes' }).expect(201);
     const res = await call('post', `/polls/${poll.id}/notifications`).send({}).expect(200);
-    assert.deepEqual(res.body, { eligible: 1, sent: 1, failed: 0 });
+    assert.deepEqual(res.body, { eligible: 1, sent: 1, failed: 0, remaining: 0 });
     assert.ok(!JSON.stringify(res.body).includes(voter));
     assert.deepEqual(lastMail(voter, 'new-options').labels, ['Nantes']);
     await call('post', `/polls/${poll.id}/notifications`).send({ x: 1 }).expect(400);

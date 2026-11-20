@@ -10,7 +10,23 @@
   which does not count as an extra voter. In name mode, entering the same name again opens the new choices.
 - Opt-in addresses are encrypted with a server-derived key, stored apart from ballots, never shown to the organiser
   (counts only) and erased when the poll closes (status or closing date, checked hourly).
-- Only the options shown on the ballot count as rated: an option added while a ballot is open stays to be rated.
+- The ballot carries a signed list of the choices shown: a score is required for each of them (no empty or partial
+  ballot), and only those count as rated; an option added while a ballot is open stays to be rated.
+- Before submitting, voters tick "I understand I can neither change nor review my vote" and, with JavaScript, confirm
+  a recap of their scores.
+- **Per-choice threshold**: a choice rated by fewer voters than the publication threshold (typically one added after
+  votes) shows no total and no rank.
+- **"Vos données" page** explaining what is kept, how, for how long, and who could link an email to a vote — including
+  the server host, who is not protected against.
+
+### Changed
+- Confirmation emails no longer contain the voter's scores (nor results): only that the vote was recorded and the
+  personal link.
+- Name mode: re-entering a name never opens a supplement (no takeover); supplements go through the personal link.
+- Closing is re-checked under lock when recording a vote or sending a notice; reopening or extending a closed poll
+  erases leftover notification addresses first. Notification and invitation emails share one hourly quota per
+  organiser, in the interface and the API, sending in batches and reporting how many remain.
+- Votes cast before 1.2 are offered only the options created after the upgrade.
 
 ## 1.1.1 — 2026-11-20
 

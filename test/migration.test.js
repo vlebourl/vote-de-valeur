@@ -39,6 +39,8 @@ test('migration d\'une base existante', async () => {
     `INSERT INTO poll_voters (poll_id, email_hash, magic_token, email, verified_at, voted_at)
      VALUES ($1, 'h1', $2, 'alice@test.local', now(), now()) RETURNING id`, [secret.id, secretToken]);
   await client.query('INSERT INTO ballots (poll_id) VALUES ($1)', [secret.id]);
+  const { rows: [legacyOption] } = await client.query(
+    "INSERT INTO options (poll_id, label) VALUES ($1, 'Ancienne') RETURNING id", [secret.id]);
 
   const { rows: [nomVoter] } = await client.query(
     `INSERT INTO poll_voters (poll_id, email_hash, magic_token, email, display_name, voted_at)
@@ -53,7 +55,13 @@ test('migration d\'une base existante', async () => {
   assert.ok(!('magic_token' in voter));
   assert.equal(voter.email, null);
   assert.equal(voter.voted_at.toISOString().slice(11), '00:00:00.000Z');
-  assert.equal(voter.rated_option_ids.length, 0, 'aucune option dans ce scrutin de test : liste vide, non nulle');
+  assert.equal(voter.rated_option_ids, null, 'vote antérieur : options notées inconnues');
+  // Seules les options créées après la migration seront proposées à ces votants.
+  const opt = (await client.query('SELECT created_at FROM options WHERE id = $1', [legacyOption.id])).rows[0];
+  assert.equal(opt.created_at, null);
+  const { rows: [fresh] } = await client.query(
+    "INSERT INTO options (poll_id, label) VALUES ($1, 'Nouvelle') RETURNING created_at", [secret.id]);
+  assert.ok(fresh.created_at, 'nouvelle option datée');
 
   const secretBallot = (await client.query('SELECT created_at FROM ballots WHERE poll_id = $1', [secret.id])).rows[0];
   assert.equal(secretBallot.created_at, null);

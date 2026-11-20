@@ -1,8 +1,8 @@
 <%
   var maxAbs = 1;
-  options.forEach(function (o) { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
+  options.forEach(function (o) { if (!o.pending && Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
   var rankCount = {};
-  options.forEach(function (o) { rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
+  options.forEach(function (o) { if (!o.pending) rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
   function half(o) { return (Math.abs(o.total) / maxAbs * 50).toFixed(1); } // demi-largeur de la jauge
   function fmt(t) { return t > 0 ? '+' + t : String(t); }
   function scoreCls(t) { return t > 0 ? 'pos' : (t < 0 ? 'neg' : ''); }
@@ -10,6 +10,20 @@
 <p class="voter-count"><strong><%= ballotCount %></strong> votant<%= ballotCount > 1 ? 's' : '' %></p>
 <div class="res-list">
   <% options.forEach(function (o) { %>
+    <% if (o.pending) { %>
+    <div class="res-row">
+      <div class="res-head">
+        <span class="res-rank">–</span>
+        <div class="res-main">
+          <% if (o.has_image) { %><img class="res-thumb" src="/options/<%= o.id %>/image" alt=""><% } %>
+          <div>
+            <div class="res-name"><%= o.label ? o.label : '(image)' %></div>
+            <div class="res-pending">Choix ajouté récemment : résultat masqué jusqu'à <%= typeof threshold !== 'undefined' ? threshold : '' %> notes (<%= o.votes_count %> pour l'instant).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <% return; } %>
     <div class="res-row">
       <div class="res-head">
         <span class="res-rank"><%= o.rank %></span>

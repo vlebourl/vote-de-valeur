@@ -19,3 +19,19 @@ export function createQuota({ limit, windowMs }) {
     },
   };
 }
+
+// Quota d'emails envoyés à des tiers à la demande d'un organisateur
+// (invitations, avis de nouveaux choix), partagé par l'interface et l'API.
+export const EMAILS_PER_HOUR = { user: 500, service: Number(process.env.API_INVITATIONS_PER_HOUR) || 2000 };
+const userEmails = createQuota({ limit: EMAILS_PER_HOUR.user, windowMs: 3600_000 });
+const serviceEmails = createQuota({ limit: EMAILS_PER_HOUR.service, windowMs: 3600_000 });
+
+// Réserve `amount` emails pour l'organisateur ; false si un plafond serait dépassé.
+export function takeEmails(userId, amount) {
+  if (!userEmails.take(userId, amount)) return false;
+  if (!serviceEmails.take('service', amount)) {
+    userEmails.take(userId, -amount); // rend la réservation
+    return false;
+  }
+  return true;
+}

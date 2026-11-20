@@ -181,7 +181,7 @@
     <% } else if (!resultsVisible) { %>
       <%- include('partials/results_hidden', { threshold: threshold, ballotCount: ballotCount }) %>
     <% } else { %>
-      <%- include('partials/results_table', { options: results, ballotCount: ballotCount }) %>
+      <%- include('partials/results_table', { options: results, ballotCount: ballotCount, threshold: threshold }) %>
     <% } %>
   </div>
 </div>

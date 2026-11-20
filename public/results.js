@@ -18,14 +18,21 @@
     }
     const opts = data.options || [];
     let maxAbs = 1;
-    opts.forEach((o) => { if (Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
+    opts.forEach((o) => { if (!o.pending && Math.abs(o.total) > maxAbs) maxAbs = Math.abs(o.total); });
     const rankCount = {};
-    opts.forEach((o) => { rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
+    opts.forEach((o) => { if (!o.pending) rankCount[o.rank] = (rankCount[o.rank] || 0) + 1; });
     const fmt = (t) => (t > 0 ? '+' + t : String(t));
     const cls = (t) => (t > 0 ? 'pos' : (t < 0 ? 'neg' : ''));
     const half = (t) => (Math.abs(t) / maxAbs * 50).toFixed(1);
     let html = count(data.ballotCount || 0) + '<div class="res-list">';
     for (const o of opts) {
+      if (o.pending) {
+        const img = o.has_image ? '<img class="res-thumb" src="/options/' + o.id + '/image" alt="">' : '';
+        html += '<div class="res-row"><div class="res-head"><span class="res-rank">–</span><div class="res-main">' + img +
+          '<div><div class="res-name">' + (o.label ? escapeHtml(o.label) : '(image)') + '</div><div class="res-pending">Choix ajouté récemment : résultat masqué jusqu\'à ' +
+          (data.threshold || 0) + ' notes (' + (o.votes_count || 0) + ' pour l\'instant).</div></div></div></div></div>';
+        continue;
+      }
       const thumb = o.has_image ? '<img class="res-thumb" src="/options/' + o.id + '/image" alt="">' : '';
       const tie = rankCount[o.rank] > 1 ? '<span class="tie">ex æquo</span>' : '';
       const desc = o.description ? '<div class="muted res-desc">' + escapeHtml(o.description) + '</div>' : '';

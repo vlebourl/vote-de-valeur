@@ -3,7 +3,7 @@
 // une ServiceError en cas de refus ; elles ne connaissent ni Express ni HTTP.
 import { query, tx } from '../db.js';
 import { hashPassword } from '../auth.js';
-import { computeResults } from '../results.js';
+import { computeResults, rankOptions } from '../results.js';
 import { notFound, forbidden, invalid, conflict } from './errors.js';
 
 export const LIMITS = {
@@ -57,11 +57,20 @@ export function resultsVisible(poll, ballotCount, viewer) {
 }
 
 // Résultats tels qu'un lecteur a le droit de les voir : sous le seuil, le
-// nombre de bulletins seulement, aucune note ni aucun classement.
+// nombre de bulletins seulement, aucune note ni aucun classement. Le seuil vaut
+// aussi pour chaque choix : un choix ajouté après des votes, noté par trop peu
+// de votants, reste « en attente » (ni total, ni rang), sinon son total
+// révélerait les notes de ces quelques votants.
 export async function visibleResults(poll, viewer) {
   const { options, ballotCount } = await computeResults(poll.id);
+  const threshold = poll.min_ballots_for_results || 0;
   const visible = resultsVisible(poll, ballotCount, viewer);
-  return { visible, ballotCount, threshold: poll.min_ballots_for_results || 0, options: visible ? options : [] };
+  if (!visible) return { visible, ballotCount, threshold, options: [] };
+  if (viewer === 'owner' && poll.is_nominative) return { visible, ballotCount, threshold, options };
+  const shown = rankOptions(options.filter((o) => o.votes_count >= threshold));
+  const waiting = options.filter((o) => o.votes_count < threshold)
+    .map((o) => ({ ...o, total: null, rank: null, pending: true }));
+  return { visible, ballotCount, threshold, options: [...shown, ...waiting] };
 }
 
 export async function listPolls(ownerId) {
@@ -219,7 +228,9 @@ export async function updatePoll(poll, changes) {
     // voté voteront en secret, leur identité en clair n'a plus lieu d'être.
     // (Les bulletins déjà déposés en nominatif restent liés, mais ne sont plus affichés.)
     // Clôture : les adresses des votants qui voulaient être prévenus sont effacées.
-    if (changes.status === 'closed') {
+    // Idem si l'on rouvre ou prolonge un scrutin déjà clos (la purge horaire
+    // n'est peut-être pas encore passée).
+    if (changes.status === 'closed' || isClosed(poll)) {
       await client.query('DELETE FROM voter_notifications WHERE poll_id = $1', [poll.id]);
     }
     if (changes.isNominative === false) {

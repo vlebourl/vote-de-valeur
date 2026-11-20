@@ -27,15 +27,19 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
 
 ## Le secret du bulletin
 
-En scrutin secret, la base ne contient rien qui relie un votant à son bulletin :
+En scrutin secret, aucune table ne relie un votant à son bulletin, et rien de ce que voit l'organisateur non plus :
 
 - l'email (ou le nom) du votant n'est stocké que sous forme de **HMAC**, qui garantit un seul vote par personne. Les alias d'une même boîte comptent pour une (suffixes `+…` partout ; points et `googlemail.com` chez Gmail) ;
 - le jeton du lien magique n'est stocké que sous forme d'**empreinte SHA-256** : une fuite de la base ne donne accès à aucun bulletin ;
 - un votant qui demande à être prévenu des nouveaux choix voit son adresse gardée **chiffrée par une clé du serveur**, dans une table rattachée à son inscription et jamais à son bulletin, effacée à la clôture ; l'organisateur ne voit que des nombres ;
 - pour envoyer la confirmation, l'email est gardé **chiffré avec une clé dérivée du jeton du votant** (AES-256-GCM, HKDF). Le serveur ne peut le déchiffrer qu'au moment où le votant ouvre son lien pour voter, puis l'efface ;
-- les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour.
+- les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour ;
+- les emails (confirmation, avis) **ne contiennent aucune note** : aucune boîte, pas même le dossier « Envoyés » de l'expéditeur, ne garde un vote. Un vote ne peut être ni modifié ni revu une fois validé, et le votant le confirme explicitement avant d'envoyer ;
+- les résultats restent masqués sous un nombre minimal de bulletins, pour le scrutin et pour chaque choix ajouté en cours de route.
 
-Limites, dites franchement : le HMAC ne se « déchiffre » pas, mais qui détient la clé du serveur peut vérifier si une adresse *donnée* a participé (pas pour qui elle a voté) ; c'est inhérent à la détection des doublons. Une personne qui possède plusieurs boîtes peut voter plusieurs fois. Quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : le seuil de publication les masque dans les tout petits scrutins, mais une fois le seuil atteint, deux lectures encadrant un seul nouveau bulletin peuvent encore le révéler à qui sait qui vient de voter.
+La page [`/donnees`](src/views/donnees.ejs) l'explique aux votants.
+
+Limites, dites franchement : le HMAC ne se « déchiffre » pas, mais qui détient la clé du serveur peut vérifier si une adresse *donnée* a participé (pas pour qui elle a voté) ; c'est inhérent à la détection des doublons. Une personne qui possède plusieurs boîtes peut voter plusieurs fois. **L'administrateur du serveur n'est pas couvert** : PostgreSQL marque d'un même numéro de transaction interne les lignes écrites ensemble, et l'inscription du votant est mise à jour en même temps que son bulletin est écrit ; avec un accès direct aux fichiers de la base, ou en observant le serveur pendant les votes, l'hébergeur peut les rapprocher. Un export logique ne contient pas ces numéros, mais l'ordre des lignes peut donner un indice dans un tout petit scrutin. S'en protéger demanderait de mélanger les bulletins par lots, ce qui n'est pas fait. Enfin, les résultats en direct sont un agrégat : le seuil de publication les masque dans les tout petits scrutins, mais une fois le seuil atteint, deux lectures encadrant un seul nouveau bulletin peuvent encore le révéler à qui sait qui vient de voter.
 
 ## API REST
 

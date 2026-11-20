@@ -59,7 +59,11 @@ export async function ballotForm(app, ballotPath, scores = {}) {
   const page = await request(app).get(ballotPath).expect(200);
   const ids = [...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]);
   const labels = [...page.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]);
-  const form = { mode: page.text.match(/name="mode" value="(\w+)"/)[1] };
+  const form = {
+    mode: page.text.match(/name="mode" value="(\w+)"/)[1],
+    shown: page.text.match(/name="shown" value="([^"]+)"/)[1],
+    final_ack: 'on',
+  };
   [...new Set(ids)].forEach((id, i) => { form[`score_${id}`] = String(scores[labels[i]] ?? 0); });
   return form;
 }
@@ -68,4 +72,13 @@ export async function ballotForm(app, ballotPath, scores = {}) {
 export async function submitBallot(app, ballotPath, scores = {}, extra = {}) {
   const form = await ballotForm(app, ballotPath, scores);
   return request(app).post(ballotPath).type('form').send({ ...form, ...extra });
+}
+
+// Champs techniques d'un bulletin affiché (liste signée, confirmation).
+export function hiddenFields(html) {
+  return {
+    mode: html.match(/name="mode" value="(\w+)"/)[1],
+    shown: html.match(/name="shown" value="([^"]+)"/)[1],
+    final_ack: 'on',
+  };
 }

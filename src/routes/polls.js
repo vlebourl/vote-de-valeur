@@ -10,6 +10,7 @@ import { parseCloseAt } from '../dates.js';
 import { ServiceError } from '../services/errors.js';
 import * as polls from '../services/polls.js';
 import { pendingCount, subscriberCount, notifySubscribers } from '../services/followups.js';
+import { takeEmails, EMAILS_PER_HOUR } from '../services/quota.js';
 
 const router = Router();
 router.param('id', requireUuidParam);
@@ -187,10 +188,12 @@ router.post('/polls/:id/options/:optId/delete', requireAuth, (req, res) => manag
 // Prévenir les votants qui l'ont demandé que de nouveaux choix sont à noter.
 // L'organisateur ne voit que des nombres, jamais les adresses.
 router.post('/polls/:id/notify', requireAuth, (req, res) => manageAction(req, res, async (poll) => {
-  const r = await notifySubscribers(poll, { max: 500 });
-  if (r.closed) return 'Le vote est clôturé : aucun avis envoyé.';
+  if (polls.isClosed(poll)) return 'Le vote est clôturé : aucun avis envoyé.';
+  const r = await notifySubscribers(poll, { take: (n) => takeEmails(req.user.id, n) });
   if (!r.eligible) return 'Aucun votant à prévenir : personne n\'a de nouveau choix à noter.';
-  return `Avis envoyé à ${r.sent} votant${r.sent > 1 ? 's' : ''}` + (r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''}).` : '.');
+  return `Avis envoyé à ${r.sent} votant${r.sent > 1 ? 's' : ''}`
+    + (r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''})` : '')
+    + (r.remaining ? `. ${r.remaining} restent à prévenir (quota de ${EMAILS_PER_HOUR.user} emails par heure atteint) : réessayez plus tard.` : '.');
 }));
 
 router.post('/polls/:id/status', requireAuth, async (req, res) => {
