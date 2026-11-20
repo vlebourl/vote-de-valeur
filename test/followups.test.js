@@ -44,7 +44,7 @@ test('parcours : abonnement, nouveau choix, avis, complément, sans rien révél
   const notice = lastMail(email, 'new-options');
   assert.deepEqual(notice.labels, ['Nice']);
   const link = pathOf(notice.url);
-  await request(app).get(first).expect(404); // l'ancien lien est remplacé
+  await request(app).get(first).expect(200); // l'ancien lien reste valable (il mène aussi au complément)
 
   // Le nouveau lien ne propose que le nouveau choix.
   const ballot = await request(app).get(link).expect(200);
@@ -273,4 +273,24 @@ test('avis : un échec d\'envoi laisse la personne à prévenir et le compte', a
   assert.equal(await pendingCount({ id: pollId }), 1);
   await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);
   assert.equal(await pendingCount({ id: pollId }), 0);
+});
+
+test('lien supplémentaire d\'un avis : l\'ancien lien marche, une nouvelle demande remplace tout', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const email = `${unique('liens')}@test.local`;
+  const first = await requestBallot(app, pollId, email);
+  await submitBallot(app, first, { Lyon: 1 }, { notify: 'on' });
+  const permalink = pathOf(lastMail(email, 'confirmation').permalink);
+  await addOption(agent, pollId, 'Albi');
+  await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);
+  const extra = pathOf(lastMail(email, 'new-options').url);
+  assert.match(lastMail(email, 'new-options').url, /ballot/);
+  await request(app).get(permalink).expect(200); // permalien de la confirmation toujours valable
+  await request(app).get(extra).expect(200);
+  // Nouvelle demande de lien : tous les anciens liens sont remplacés.
+  const renewed = await requestBallot(app, pollId, email);
+  await request(app).get(permalink).expect(404);
+  await request(app).get(extra).expect(404);
+  await request(app).get(renewed).expect(200);
 });

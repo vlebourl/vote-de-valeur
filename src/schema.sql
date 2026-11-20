@@ -188,3 +188,13 @@ CREATE TABLE IF NOT EXISTS voter_notifications (
   created_at          TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_voter_notifications_poll ON voter_notifications(poll_id);
+
+-- === Liens supplémentaires (1.2.1) ===
+-- Un avis de nouveau choix donne un lien en plus du lien existant, sans
+-- l'invalider (empreinte SHA-256 seulement). Une nouvelle demande de lien par
+-- le votant remplace en revanche tous ses liens.
+CREATE TABLE IF NOT EXISTS voter_extra_tokens (
+  token_hash TEXT PRIMARY KEY,
+  voter_id   UUID NOT NULL REFERENCES poll_voters(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_voter_extra_tokens_voter ON voter_extra_tokens(voter_id);

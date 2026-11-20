@@ -92,8 +92,8 @@ export async function subscriberCount(poll) {
   return rows[0].n;
 }
 
-// Prévient les abonnés concernés : nouveau lien personnel (il remplace le
-// précédent, y compris le lien des résultats) et liste des nouveaux choix.
+// Prévient les abonnés concernés : un lien personnel supplémentaire (l'ancien
+// reste valable) et la liste des nouveaux choix.
 // Pour chaque votant, tout est revérifié sous verrou (scrutin ouvert à cet
 // instant, choix encore à noter et pas déjà signalés) ; le quota n'est réservé
 // qu'ensuite, pour un envoi réel. Le remplacement du lien n'est validé que si
@@ -126,7 +126,8 @@ export async function notifySubscribers(poll, { take = () => true } = {}) {
         const email = openEmail(v[0].email_enc);
         if (!email) throw new Error('adresse illisible');
         if (!take(1)) return 'quota';
-        await client.query('UPDATE poll_voters SET token_hash = $1 WHERE id = $2', [hashToken(token), voterId]);
+        // Lien supplémentaire : l'ancien lien du votant reste valable.
+        await client.query('INSERT INTO voter_extra_tokens (token_hash, voter_id) VALUES ($1, $2)', [hashToken(token), voterId]);
         await client.query(
           `UPDATE voter_notifications
               SET notified_option_ids = ARRAY(SELECT DISTINCT unnest(notified_option_ids || $1::uuid[]))

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-11-20
+
+### Fixed
+- A new-choice notice no longer invalidates the voter's existing link: it adds an extra personal link (stored as a
+  hash), and the link from the confirmation email keeps working. A new link requested by the voter still replaces all
+  of their links.
+
 ## 1.2.0 — 2026-11-20
 
 ### Added

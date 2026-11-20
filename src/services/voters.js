@@ -88,6 +88,8 @@ export async function sendVoterLink(poll, email, name = '', { keepVoted = false 
       ]
     );
     if (!rows[0]) return 'already_voted';
+    // Une nouvelle demande remplace tous les liens du votant, y compris ceux reçus dans des avis.
+    await client.query('DELETE FROM voter_extra_tokens WHERE voter_id = $1', [rows[0].id]);
     // Envoi dans la transaction : un échec annule le remplacement du lien.
     await sendMagicLink({ to: email, pollTitle: poll.title, url: ballotUrl(poll.id, token) });
     return 'sent';

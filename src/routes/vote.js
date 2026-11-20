@@ -20,9 +20,14 @@ async function getPoll(id) {
 }
 
 // Votant correspondant au jeton d'un lien (la base ne connaît que son empreinte).
+// Votant correspondant au jeton d'un lien (la base ne connaît que son empreinte) :
+// son lien principal, ou un lien supplémentaire reçu dans un avis.
+const TOKEN_MATCH = `(pv.token_hash = $2 OR EXISTS (
+    SELECT 1 FROM voter_extra_tokens t WHERE t.voter_id = pv.id AND t.token_hash = $2))`;
+
 async function getVoterByToken(pollId, token) {
   const { rows } = await query(
-    'SELECT * FROM poll_voters WHERE poll_id = $1 AND token_hash = $2',
+    `SELECT pv.* FROM poll_voters pv WHERE pv.poll_id = $1 AND ${TOKEN_MATCH}`,
     [pollId, hashToken(token)]
   );
   return rows[0] || null;
@@ -248,7 +253,10 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
     if (!locked[0]) return 'gone';
     // Revérifiés après l'attente du verrou : lien toujours valable (un avis a pu
     // le remplacer) et échéance pas encore passée.
-    if (locked[0].token_hash !== hashToken(token)) return 'token_replaced';
+    const { rows: still } = await client.query(
+      `SELECT 1 FROM poll_voters pv WHERE pv.id = $1 AND ${TOKEN_MATCH}`, [voter.id, hashToken(token)]
+    );
+    if (!still[0]) return 'token_replaced';
     if (isClosed(current[0])) return 'closed';
     const supplement = Boolean(locked[0].voted_at);
     const stillMissing = supplement
