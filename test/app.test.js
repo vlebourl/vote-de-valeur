@@ -322,3 +322,13 @@ test('seuil invalide refusé dans le formulaire', async () => {
   const res = await agent.post(`/polls/${pollId}/edit`).type('form').send({ title: 'T', min_ballots_for_results: '-1' }).expect(302);
   assert.match(decodeURIComponent(res.headers.location), /err=Seuil/);
 });
+
+test('favicon : déclarée dans les pages et servie', async () => {
+  const page = await request(app).get('/').expect(200);
+  assert.match(page.text, /rel="icon" href="\/favicon.svg"/);
+  assert.match((await request(app).get('/favicon.svg').expect(200)).headers['content-type'], /image\/svg\+xml/);
+  await request(app).get('/favicon.ico').expect(200);
+  await request(app).get('/favicon-32.png').expect(200);
+  await request(app).get('/apple-touch-icon.png').expect(200);
+  assert.match((await request(app).get('/api/docs').expect(200)).text, /favicon.svg/);
+});

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 — 2026-11-20
+
+### Added
+- Favicon (SVG, with PNG, ICO and Apple touch icon fallbacks) drawn from the site's −2…+2 bars logo.
+
 ## 1.1.0 — 2026-11-20
 
 ### Added
