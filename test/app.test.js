@@ -234,3 +234,28 @@ test('page de gestion : formulaire sans titre refusé', async () => {
   const res = await agent.post(`/polls/${pollId}/edit`).type('form').send({ description: 'x' }).expect(302);
   assert.match(decodeURIComponent(res.headers.location), /err=Le titre ne peut pas être vide/);
 });
+
+test('alias Gmail : la même boîte ne vote qu\'une fois', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const base = unique('gm').replace(/[^a-z0-9]/g, '');
+  const first = await requestBallot(app, pollId, `${base}@gmail.com`);
+  await submitBallot(app, first, { Lyon: 1 });
+  // Variante de la même boîte : nouveau lien, mais même votant, qui a déjà voté.
+  const second = await requestBallot(app, pollId, `${base.slice(0, 2)}.${base.slice(2)}+2@gmail.com`);
+  const res = await request(app).get(second).expect(302);
+  assert.match(res.headers.location, /\/results\//);
+  const { rows } = await query('SELECT COUNT(*)::int AS n FROM poll_voters WHERE poll_id = $1', [pollId]);
+  assert.equal(rows[0].n, 1);
+});
+
+test('inscription antérieure à la normalisation reconnue (ancienne empreinte)', async () => {
+  const { hashEmail } = await import('../src/auth.js');
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const email = `${unique('ancien').replace(/[^a-z0-9]/g, '')}+tag@exemple.fr`;
+  await query("INSERT INTO poll_voters (poll_id, email_hash, token_hash, voted_at) VALUES ($1, $2, 'legacy-' || gen_random_uuid(), now())", [pollId, hashEmail(email)]);
+  await requestBallot(app, pollId, email);
+  const { rows } = await query('SELECT COUNT(*)::int AS n, bool_and(voted_at IS NOT NULL) AS voted FROM poll_voters WHERE poll_id = $1', [pollId]);
+  assert.deepEqual(rows[0], { n: 1, voted: true });
+});

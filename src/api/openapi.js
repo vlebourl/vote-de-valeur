@@ -28,7 +28,7 @@ export function openapi(baseUrl) {
         '',
         '**Authentification** : créez un jeton dans votre compte (menu *API*) puis envoyez-le dans l’en-tête',
         '`Authorization: Bearer vdv_…`. Un jeton `read` ne peut que lire (GET, HEAD) ; un jeton `write` peut tout faire.',
-        'Les corps de requête sont en JSON (`Content-Type: application/json`), sauf l’ajout d’une option avec image (multipart).',
+        'Les corps de requête sont en JSON (`Content-Type: application/json`), sauf les images d’options (multipart).',
         '',
         '**Vote** : l’API ne permet pas de voter. Chaque votant vote par son lien personnel, reçu par email',
         '(voir `POST /polls/{pollId}/invitations`) ou obtenu sur la page du vote : un email = un vote, et le',
@@ -125,6 +125,21 @@ export function openapi(baseUrl) {
           responses: { 204: { description: 'Supprimée.' }, 409: error('Un scrutin garde au moins 2 options.'), ...writes, ...forPoll },
         },
       },
+      '/polls/{pollId}/options/{optionId}/image': {
+        parameters: [pollId, optionId],
+        put: {
+          tags: ['Options'], summary: 'Ajouter ou remplacer l’image d’une option', operationId: 'setOptionImage',
+          requestBody: {
+            required: true,
+            content: { 'multipart/form-data': { schema: { type: 'object', required: ['image'], properties: { image: { type: 'string', format: 'binary', description: 'PNG, JPEG, WebP ou GIF ; 3 Mo au plus.' } } } } },
+          },
+          responses: {
+            200: json(ref('Option'), 'Image enregistrée.'),
+            400: error('Image absente ou format non pris en charge.'), 413: error('Image trop volumineuse.'),
+            ...writes, ...forPoll,
+          },
+        },
+      },
       '/polls/{pollId}/results': {
         parameters: [pollId],
         get: {
@@ -206,7 +221,7 @@ export function openapi(baseUrl) {
             options: {
               type: 'array', minItems: 2, maxItems: 50,
               items: { oneOf: [{ type: 'string', maxLength: 200 }, ref('OptionInput')] },
-              description: 'Intitulés, ou objets { label, description }. Les images s’ajoutent ensuite par POST /polls/{pollId}/options.',
+              description: 'Intitulés, ou objets { label, description }. Les images s’ajoutent ensuite par PUT /polls/{pollId}/options/{optionId}/image.',
             },
             auth_mode: { enum: ['email', 'name'], default: 'email' },
             is_private: { type: 'boolean', default: false },

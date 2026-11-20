@@ -13,7 +13,7 @@ import { isUuid } from '../security.js';
 import { ServiceError, invalid, conflict } from '../services/errors.js';
 import * as polls from '../services/polls.js';
 import { authenticateApiToken } from '../services/apiTokens.js';
-import { sendVoterLink, normalizeEmail } from '../services/voters.js';
+import { sendVoterLink, normalizeEmail, canonicalEmail } from '../services/voters.js';
 import { createQuota } from '../services/quota.js';
 import { openapi } from '../api/openapi.js';
 
@@ -176,6 +176,10 @@ export function createApiRouter({ rateLimits = true } = {}) {
 
   // Corps acceptés : JSON, et multipart pour l'image d'une option.
   router.use((req, res, next) => {
+    if (req.method === 'PUT') {
+      if (/^\/polls\/[^/]+\/options\/[^/]+\/image$/.test(req.path) && req.is('multipart/form-data')) return next();
+      return next(new ApiError(415, 'unsupported_media_type', 'Content-Type attendu : multipart/form-data (champ image).'));
+    }
     if (req.method !== 'POST' && req.method !== 'PATCH') return next();
     if (req.is('application/json')) return next();
     if (req.method === 'POST' && /^\/polls\/[^/]+\/options$/.test(req.path) && req.is('multipart/form-data')) return next();
@@ -287,6 +291,20 @@ export function createApiRouter({ rateLimits = true } = {}) {
     res.json(optionJson(option));
   });
 
+  // Image d'une option existante (multipart, champ « image ») : ajout ou remplacement.
+  router.put('/polls/:pollId/options/:optionId/image', (req, res, next) => {
+    upload.single('image')(req, res, (err) => {
+      if (!err) return next();
+      next(err.code === 'LIMIT_FILE_SIZE'
+        ? new ApiError(413, 'payload_too_large', 'Image trop volumineuse (3 Mo maximum).')
+        : new ApiError(400, 'validation_error', 'Multipart attendu : fichier image.'));
+    });
+  }, async (req, res) => {
+    const poll = await owned(req);
+    const option = await polls.setOptionImage(poll, req.params.optionId, req.file || null);
+    res.json(optionJson(option));
+  });
+
   router.delete('/polls/:pollId/options/:optionId', async (req, res) => {
     await polls.deleteOption(await owned(req), req.params.optionId);
     res.status(204).end();
@@ -332,8 +350,9 @@ export function createApiRouter({ rateLimits = true } = {}) {
       const name = typeof entry === 'object' && entry && typeof entry.name === 'string' ? entry.name : '';
       const email = normalizeEmail(raw);
       if (!email) { rejected.push({ email: typeof raw === 'string' ? raw : null, reason: 'invalid_email' }); continue; }
-      if (seen.has(email)) { rejected.push({ email, reason: 'duplicate' }); continue; }
-      seen.add(email);
+      const canonical = canonicalEmail(email);
+      if (seen.has(canonical)) { rejected.push({ email, reason: 'duplicate' }); continue; }
+      seen.add(canonical);
       valid.push({ email, name });
     }
 

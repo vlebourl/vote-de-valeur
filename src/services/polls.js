@@ -248,6 +248,19 @@ export async function editOption(poll, optionId, changes) {
   throw invalid('Une option sans image doit conserver un intitulé.');
 }
 
+// Remplace l'image d'une option ; image = { buffer, mimetype }.
+export async function setOptionImage(poll, optionId, image) {
+  if (!image) throw invalid('Image attendue (champ « image »).');
+  if (!IMAGE_MIME.has(image.mimetype)) throw invalid('Image : formats PNG, JPEG, WebP ou GIF uniquement.');
+  const { rows } = await query(
+    `UPDATE options SET image_data = $1, image_mime = $2 WHERE id = $3 AND poll_id = $4
+     RETURNING id, label, description, position, (image_data IS NOT NULL) AS has_image`,
+    [image.buffer, image.mimetype, optionId, poll.id]
+  );
+  if (!rows[0]) throw notFound('Option introuvable.');
+  return rows[0];
+}
+
 // Un scrutin doit conserver au moins 2 options.
 export async function deleteOption(poll, optionId) {
   await tx(async (client) => {

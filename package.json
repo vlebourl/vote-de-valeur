@@ -1,6 +1,6 @@
 {
   "name": "vote-de-valeur",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Plateforme de vote de valeur (range voting -2..+2)",
   "type": "module",
   "main": "src/server.js",

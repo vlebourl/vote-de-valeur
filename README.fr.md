@@ -27,12 +27,12 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
 
 En scrutin secret, la base ne contient rien qui relie un votant à son bulletin :
 
-- l'email (ou le nom) du votant n'est stocké que sous forme de **HMAC**, qui garantit un seul vote par personne ;
+- l'email (ou le nom) du votant n'est stocké que sous forme de **HMAC**, qui garantit un seul vote par personne. Les alias d'une même boîte comptent pour une (suffixes `+…` partout ; points et `googlemail.com` chez Gmail) ;
 - le jeton du lien magique n'est stocké que sous forme d'**empreinte SHA-256** : une fuite de la base ne donne accès à aucun bulletin ;
 - pour envoyer la confirmation, l'email est gardé **chiffré avec une clé dérivée du jeton du votant** (AES-256-GCM, HKDF). Le serveur ne peut le déchiffrer qu'au moment où le votant ouvre son lien pour voter, puis l'efface ;
 - les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour.
 
-Limites, dites franchement : quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : dans un tout petit scrutin (un ou deux votants), ou entre deux lectures encadrant un seul nouveau bulletin, les totaux peuvent révéler un vote.
+Limites, dites franchement : le HMAC ne se « déchiffre » pas, mais qui détient la clé du serveur peut vérifier si une adresse *donnée* a participé (pas pour qui elle a voté) ; c'est inhérent à la détection des doublons. Une personne qui possède plusieurs boîtes peut voter plusieurs fois. Quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : dans un tout petit scrutin (un ou deux votants), ou entre deux lectures encadrant un seul nouveau bulletin, les totaux peuvent révéler un vote.
 
 ## API REST
 
@@ -54,7 +54,7 @@ curl -H "Authorization: Bearer $VDV_TOKEN" https://vote.exemple.fr/api/v1/polls/
 
 Points d'accès :
 - scrutins : lister, créer, lire, modifier (titre, description, date de clôture, ouvert/clos, nominatif), supprimer ;
-- options : ajouter (JSON, ou multipart avec image), modifier, supprimer ;
+- options : ajouter (JSON, ou multipart avec image), modifier, changer l'image, supprimer ;
 - résultats en temps réel ;
 - participants d'un scrutin nominatif ;
 - invitations.

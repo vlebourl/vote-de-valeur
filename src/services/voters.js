@@ -18,6 +18,29 @@ export function normalizeEmail(raw) {
   return email.length <= 254 && EMAIL.test(email) ? email : null;
 }
 
+// Forme canonique servant à l'unicité du vote : les variantes d'une même boîte
+// (« +suffixe » chez tous les fournisseurs ; points et domaine googlemail.com
+// chez Gmail) donnent la même empreinte. L'email est envoyé à l'adresse saisie.
+const GMAIL = new Set(['gmail.com', 'googlemail.com']);
+export function canonicalEmail(email) {
+  const at = email.lastIndexOf('@');
+  let local = email.slice(0, at);
+  let domain = email.slice(at + 1);
+  const plus = local.indexOf('+');
+  if (plus > 0) local = local.slice(0, plus);
+  if (GMAIL.has(domain)) {
+    local = local.replace(/\./g, '');
+    domain = 'gmail.com';
+  }
+  return `${local}@${domain}`;
+}
+
+// Empreintes à rechercher : la canonique, et l'ancienne (adresse telle que
+// saisie), pour reconnaître les inscriptions antérieures à la normalisation.
+export function emailHashes(email) {
+  return [...new Set([hashEmail(canonicalEmail(email)), hashEmail(email)])];
+}
+
 export const ballotUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/ballot/${token}`;
 export const resultsUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/results/${token}`;
 
@@ -35,7 +58,17 @@ export const resultsUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/r
 export async function sendVoterLink(poll, email, name = '', { keepVoted = false } = {}) {
   const token = newToken();
   const displayName = poll.is_nominative ? (String(name || '').trim().slice(0, 120) || null) : null;
+  const [canonicalHash, ...legacy] = emailHashes(email);
   return tx(async (client) => {
+    // Inscription existante sous une ancienne empreinte : on la reprend.
+    let emailHash = canonicalHash;
+    if (legacy.length) {
+      const { rows: found } = await client.query(
+        'SELECT email_hash FROM poll_voters WHERE poll_id = $1 AND email_hash = ANY($2) ORDER BY (email_hash = $3) DESC LIMIT 1',
+        [poll.id, [canonicalHash, ...legacy], canonicalHash]
+      );
+      if (found[0]) emailHash = found[0].email_hash;
+    }
     const { rows } = await client.query(
       `INSERT INTO poll_voters (poll_id, email_hash, token_hash, email, email_sealed, display_name)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -47,7 +80,7 @@ export async function sendVoterLink(poll, email, name = '', { keepVoted = false 
        WHERE NOT $7 OR poll_voters.voted_at IS NULL
        RETURNING id`,
       [
-        poll.id, hashEmail(email), hashToken(token),
+        poll.id, emailHash, hashToken(token),
         poll.is_nominative ? email : null,
         poll.is_nominative ? null : sealWithToken(token, email),
         displayName,

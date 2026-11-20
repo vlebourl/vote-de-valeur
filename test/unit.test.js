@@ -65,3 +65,11 @@ test('dates : heure de Paris convertie en UTC, été comme hiver', async () => {
 
   assert.equal(formatDateTime(new Date('2026-07-15T16:00:00Z'), 'Europe/Paris'), '15/07 à 18:00');
 });
+
+test('emails : forme canonique des alias', async () => {
+  const { canonicalEmail } = await import('../src/services/voters.js');
+  assert.equal(canonicalEmail('jean.dupont+vote@gmail.com'), 'jeandupont@gmail.com');
+  assert.equal(canonicalEmail('jean.dupont@googlemail.com'), 'jeandupont@gmail.com');
+  assert.equal(canonicalEmail('jean.dupont+x@exemple.fr'), 'jean.dupont@exemple.fr');
+  assert.equal(canonicalEmail('+abc@exemple.fr'), '+abc@exemple.fr');
+});

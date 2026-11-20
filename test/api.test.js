@@ -170,12 +170,22 @@ describe('options', () => {
       .attach('image', Buffer.from('pas une image'), { filename: 'x.txt', contentType: 'text/plain' }).expect(400);
     await call('post', `/polls/${poll.id}/options`).send({}).expect(400);
 
+    // Image ajoutée à une option existante (texte seul au départ).
+    const withImage = await call('put', `/polls/${poll.id}/options/${added.body.id}/image`)
+      .attach('image', png, { filename: 'p.png', contentType: 'image/png' }).expect(200);
+    assert.equal(withImage.body.has_image, true);
+    assert.equal(withImage.body.label, 'C');
+    await call('put', `/polls/${poll.id}/options/${added.body.id}/image`).send({}).expect(415);
+    await call('put', `/polls/${poll.id}/options/${added.body.id}/image`)
+      .attach('image', Buffer.from('texte'), { filename: 't.txt', contentType: 'text/plain' }).expect(400);
+
     // Modifications simultanées de champs distincts : aucune n'est perdue.
     await Promise.all([
       call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ label: 'C bis' }).expect(200),
       call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ description: 'troisième' }).expect(200),
     ]);
-    const empty = await call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ label: '' }).expect(400);
+    const textOnly = poll.options.find((o) => o.label === 'A').id;
+    const empty = await call('patch', `/polls/${poll.id}/options/${textOnly}`).send({ label: '' }).expect(400);
     assert.match(empty.body.error.message, /intitulé/);
     const edited = await call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({}).expect(200);
     assert.equal(edited.body.label, 'C bis');
@@ -294,6 +304,17 @@ describe('votants et résultats', () => {
     await request(app).get(permalink).expect(200);
   });
 
+  test('alias d\'une même boîte : une seule invitation, un seul votant', async () => {
+    const { call } = await client();
+    const { body: poll } = await newPoll(call).expect(201);
+    const base = unique('alias').replace(/[^a-z0-9]/g, '');
+    const res = await call('post', `/polls/${poll.id}/invitations`)
+      .send({ recipients: [`${base}@gmail.com`, `${base.slice(0, 3)}.${base.slice(3)}+vote@googlemail.com`, `${base}+x@exemple.fr`, `${base}@exemple.fr`] })
+      .expect(200);
+    assert.deepEqual(res.body.sent, [`${base}@gmail.com`, `${base}+x@exemple.fr`]);
+    assert.deepEqual(res.body.rejected.map((r) => r.reason), ['duplicate', 'duplicate']);
+  });
+
   test('adresses : uniquement des adresses nues', async () => {
     const { call } = await client();
     const { body: poll } = await newPoll(call).expect(201);
@@ -316,7 +337,7 @@ describe('documentation OpenAPI', () => {
     const spec = openapi('');
     const fake = '00000000-0000-4000-8000-000000000000';
     for (const [path, item] of Object.entries(spec.paths)) {
-      for (const method of ['get', 'post', 'patch', 'delete']) {
+      for (const method of ['get', 'post', 'patch', 'put', 'delete']) {
         if (!item[method]) continue;
         const res = await call(method, path.replace(/\{[^}]+\}/g, fake)).send({});
         assert.notEqual(res.body?.error?.code, 'route_not_found', `${method.toUpperCase()} ${path} non routé`);
@@ -329,6 +350,7 @@ describe('documentation OpenAPI', () => {
       'get /polls/{pollId}', 'get /polls/{pollId}/participants', 'get /polls/{pollId}/results',
       'patch /polls/{pollId}', 'patch /polls/{pollId}/options/{optionId}', 'post /polls',
       'post /polls/{pollId}/invitations', 'post /polls/{pollId}/options',
+      'put /polls/{pollId}/options/{optionId}/image',
     ]);
   });
 });

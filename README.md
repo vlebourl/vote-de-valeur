@@ -27,12 +27,12 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
 
 In a secret poll the database never holds anything that ties a voter to their ballot:
 
-- the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person;
+- the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person. Aliases of the same mailbox count as one (`+tag` suffixes everywhere; dots and `googlemail.com` for Gmail);
 - the magic-link token is stored only as a **SHA-256 hash**, so a database leak gives access to no ballot;
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
 - ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
 
-Limits, stated plainly: someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: in a very small poll (one or two voters), or between two reads around a single new ballot, totals can reveal how someone voted.
+Limits, stated plainly: the HMAC cannot be reversed, but whoever holds the server key can check whether a *given* address took part (not how it voted); this is inherent to detecting duplicates. Someone owning several mailboxes can vote several times. Someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: in a very small poll (one or two voters), or between two reads around a single new ballot, totals can reveal how someone voted.
 
 ## REST API
 
@@ -52,7 +52,7 @@ curl -H "Authorization: Bearer $VDV_TOKEN" -H "Content-Type: application/json" \
 curl -H "Authorization: Bearer $VDV_TOKEN" https://vote.example.org/api/v1/polls/$POLL_ID/results
 ```
 
-Endpoints: list, create, read, update (title, description, closing date, open/closed, nominative), delete polls; add (JSON or multipart with image), edit and delete options; live results; participants of nominative polls; invitations. Interactive documentation is served at `/api/docs`, and the OpenAPI 3.1 spec at `/api/v1/openapi.json`.
+Endpoints: list, create, read, update (title, description, closing date, open/closed, nominative), delete polls; add (JSON or multipart with image), edit, set the image of, and delete options; live results; participants of nominative polls; invitations. Interactive documentation is served at `/api/docs`, and the OpenAPI 3.1 spec at `/api/v1/openapi.json`.
 
 By design, **voting is not exposed**: a voter always votes through their personal link, which keeps "one email, one vote" and ballot secrecy intact. Limits: 600 requests per 15 minutes per token; up to 100 recipients per invitation request and 500 invitations per hour per organiser, all tokens combined (plus a service-wide cap). Someone who has already voted is never re-invited, so their results link stays valid.
 
