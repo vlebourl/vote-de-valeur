@@ -2,7 +2,7 @@
 // - TEST_DATABASE_URL s'il est défini (CI) ;
 // - sinon un PostgreSQL embarqué et jetable (aucune installation requise).
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,9 +52,12 @@ const env = {
   EMAIL_HASH_SECRET: crypto.randomBytes(32).toString('hex'),
 };
 
+// Liste explicite : Node 20 ne comprend pas les motifs glob de `node --test`.
+const testFiles = (await readdir('test')).filter((f) => f.endsWith('.test.js')).sort().map((f) => join('test', f));
+
 let code = await run(process.execPath, ['src/migrate.js'], env);
 if (code === 0) {
-  code = await run(process.execPath, ['--test', '--test-concurrency=1', ...process.argv.slice(2), 'test/*.test.js'], env);
+  code = await run(process.execPath, ['--test', '--test-concurrency=1', ...process.argv.slice(2), ...testFiles], env);
 }
 
 if (embedded) {
