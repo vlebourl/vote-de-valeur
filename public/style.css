@@ -189,3 +189,4 @@ table.results th { font-size: 13px; text-transform: uppercase; letter-spacing: .
 .row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 h1 { margin-top: 0; letter-spacing: -.01em; }
 .results-hidden { background: #f5f3ff; border: 1px dashed #c4b5fd; color: #4c1d95; padding: 14px 16px; border-radius: var(--radius-sm); }
+.voter-count { margin: 0 0 12px; font-size: 15px; }

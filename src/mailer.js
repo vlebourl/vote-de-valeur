@@ -50,31 +50,25 @@ export async function sendMagicLink({ to, pollTitle, url }) {
   return transporter.sendMail({ from: FROM, to, subject, text, html });
 }
 
-// Confirmation envoyée au votant après son vote : son bulletin, les résultats
-// du moment, et le permalien (qui reste à jour en temps réel).
-export async function sendVoteConfirmation({ to, pollTitle, myScores, results, threshold, permalink }) {
+// Confirmation envoyée au votant après son vote : le rappel de SES notes et le
+// permalien des résultats. Jamais de résultats dans l'email : un email se
+// transfère et se conserve, et un total figé sur peu de bulletins trahirait des votes.
+export async function sendVoteConfirmation({ to, pollTitle, myScores, permalink }) {
   const subject = `Confirmation de votre vote : « ${pollTitle} »`;
   const fmt = (s) => (s > 0 ? '+' + s : String(s));
   const myLines = myScores.map((o) => `  • ${o.label || '(image)'} : ${fmt(o.score)}`).join('\n');
-  // results = null : seuil de publication non atteint, aucun résultat joint.
-  const hiddenNote = `Résultats masqués jusqu'à ${threshold} bulletins, pour préserver le secret du vote.`;
-  const resLines = results ? results.map((o) => `  ${o.rank}. ${o.label || '(image)'} — ${fmt(o.total)}`).join('\n') : `  ${hiddenNote}`;
   const text = `Bonjour,\n\nVotre vote pour « ${pollTitle} » a bien été enregistré. Merci !\n\n` +
-    `Votre vote :\n${myLines}\n\nRésultats actuels :\n${resLines}\n\n` +
-    `Consultez les résultats à jour à tout moment (lien à conserver) :\n${permalink}\n\n— Vote de valeur`;
+    `Votre vote :\n${myLines}\n\n` +
+    `Suivez les résultats à tout moment avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n— Vote de valeur`;
   const myHtml = myScores.map((o) => `<li>${escapeHtml(o.label || '(image)')} : <strong>${fmt(o.score)}</strong></li>`).join('');
-  const resHtml = results
-    ? results.map((o) => `<li>${o.rank}. ${escapeHtml(o.label || '(image)')} — <strong>${fmt(o.total)}</strong></li>`).join('')
-    : `<li>${escapeHtml(hiddenNote)}</li>`;
   const html = `<p>Bonjour,</p>
 <p>Votre vote pour <strong>« ${escapeHtml(pollTitle)} »</strong> a bien été enregistré. Merci !</p>
 <p><strong>Votre vote :</strong></p><ul>${myHtml}</ul>
-<p><strong>Résultats actuels :</strong></p><ul>${resHtml}</ul>
-<p><a href="${permalink}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Voir les résultats à jour</a></p>
-<p style="color:#666;font-size:13px">Ce lien reste valable et affiche les résultats en temps réel :<br>${permalink}</p>`;
+<p><a href="${permalink}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Suivre les résultats</a></p>
+<p style="color:#666;font-size:13px">Lien personnel à conserver, ne le partagez pas :<br>${permalink}</p>`;
 
   if (DEV_MODE) {
-    keepInOutbox({ kind: 'confirmation', to, permalink, myScores, results });
+    keepInOutbox({ kind: 'confirmation', to, permalink, myScores, text, html });
     console.log('\n📧 [SMTP_DEV_MODE] Confirmation de vote non envoyée :');
     console.log(`   → ${to} : ${permalink}\n`);
     return { devMode: true };

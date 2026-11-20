@@ -19,7 +19,7 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
   - **par nom** (mode léger, pour les groupes de confiance) : un nom = un vote ;
   - et tout scrutin peut être **privé** (lien + mot de passe).
 - **Vote secret ou nominatif** : par défaut, personne, pas même l'organisateur, ne peut relier un bulletin à un votant. Un scrutin peut passer en nominatif ; les votants en sont alors avertis sur le bulletin.
-- **Résultats** invisibles avant d'avoir voté (pas d'influence), puis affichés **en direct** via un lien personnel permanent, aussi envoyé dans l'email de confirmation.
+- **Résultats** invisibles avant d'avoir voté (pas d'influence), puis affichés **en direct** via un lien personnel permanent, aussi envoyé dans l'email de confirmation (qui ne rappelle que ses propres notes, jamais les résultats).
 - **Seuil de publication** : les résultats restent masqués, pour les votants comme pour l'organisateur, tant que le scrutin n'a pas atteint un nombre minimal de bulletins (5 par défaut) : avec un ou deux bulletins, les totaux révéleraient les votes.
 - **Classement** : somme des notes, abstention = 0, ex æquo au même rang (méthode « 1224 »).
 - **API REST** pour les organisateurs (jetons, documentation OpenAPI) : voir plus bas.

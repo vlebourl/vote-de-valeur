@@ -218,19 +218,16 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   }
   if (outcome === 'already_voted') return res.redirect(`/vote/${poll.id}/results/${token}`);
 
-  // Confirmation par email (best-effort : ne bloque jamais le vote). En scrutin
-  // secret, l'adresse n'est lisible qu'avec le jeton présenté maintenant.
+  // Confirmation par email (best-effort : ne bloque jamais le vote) : ses notes
+  // seulement, jamais les résultats. En scrutin secret, l'adresse n'est lisible
+  // qu'avec le jeton présenté maintenant.
   const recipient = voter.email || openWithToken(token, voter.email_sealed);
   if (recipient) {
     try {
-      // Résultats joints seulement s'ils sont publiables (seuil de bulletins atteint).
-      const { visible, options: results, threshold } = await visibleResults(poll, 'voter');
       await sendVoteConfirmation({
         to: recipient,
         pollTitle: poll.title,
         myScores,
-        results: visible ? results.map((o) => ({ label: o.label, total: o.total, rank: o.rank })) : null,
-        threshold,
         permalink: resultsUrl(poll.id, token),
       });
     } catch (err) {

@@ -279,7 +279,8 @@ test('seuil de publication : résultats masqués partout tant qu\'il manque des 
   const api = await request(app).get(`/api/polls/${pollId}/results?token=${tokenA}`).expect(200);
   assert.equal(api.body.hidden, true);
   assert.deepEqual(api.body.options, []);
-  assert.equal(lastMail(alice, 'confirmation').results, null, 'confirmation sans résultats');
+  assert.match(page.text, /<strong>1<\/strong> votant</);
+  assert.match(page.text, /il faut au moins 2 votants/);
   const manage = await agent.get(`/polls/${pollId}/manage`).expect(200);
   assert.match(manage.text, /Résultats masqués/);
   assert.equal((await agent.get(`/polls/${pollId}/results.json`).expect(200)).body.hidden, true);
@@ -289,6 +290,20 @@ test('seuil de publication : résultats masqués partout tant qu\'il manque des 
   const after = await request(app).get(`/api/polls/${pollId}/results?token=${tokenA}`).expect(200);
   assert.equal(after.body.hidden, false);
   assert.equal(after.body.options.find((o) => o.label === 'Lyon').total, 3);
+  const shown = await request(app).get(`/vote/${pollId}/results/${tokenA}`).expect(200);
+  assert.match(shown.text, /<strong>2<\/strong> votants/);
+  assert.match(shown.text, /res-score/);
+});
+
+test('email de confirmation : ses propres notes, jamais les résultats', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent); // seuil 0 : résultats publiés
+  const voter = `${unique('confirm')}@test.local`;
+  await submitBallot(app, await requestBallot(app, pollId, voter), { Lyon: 2, Marseille: -1 });
+  const mail = lastMail(voter, 'confirmation');
+  assert.match(mail.text, /Lyon : \+2/);
+  assert.match(mail.text, /Marseille : -1/);
+  assert.doesNotMatch(mail.text + mail.html, /Résultats actuels|rang|total/i);
 });
 
 test('seuil en scrutin nominatif : l\'organisateur voit tout, pas les votants', async () => {

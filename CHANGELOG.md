@@ -7,6 +7,11 @@
   page and through the API): below it, results are hidden everywhere — voter page, live updates, organiser page, API,
   confirmation email — and only the ballot count is shown. In a nominative poll the organiser still sees everything;
   the threshold then applies to voters. Polls created before this version keep a threshold of 0.
+- The results page always shows the number of voters, with an explicit message while it is below the threshold.
+
+### Changed
+- The vote confirmation email no longer contains any result: only the voter's own scores and their personal results
+  link (an email is forwarded and kept; totals frozen on a few ballots would reveal votes).
 
 ## 1.0.0 — 2026-11-20
 

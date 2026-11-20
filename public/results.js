@@ -8,11 +8,12 @@
 
   window.vvRenderResults = function (el, data) {
     if (!el) return;
+    const count = function (n) { return '<p class="voter-count"><strong>' + n + '</strong> votant' + (n > 1 ? 's' : '') + '</p>'; };
     if (data.hidden) {
       const t = data.threshold || 0, n = data.ballotCount || 0;
-      el.innerHTML = '<div class="results-hidden"><p style="margin:0"><strong>Résultats masqués</strong> jusqu\'à ' + t +
-        ' bulletin' + (t > 1 ? 's' : '') + ' (' + n + ' pour l\'instant).</p><p class="muted" style="font-size:13px;margin:6px 0 0">' +
-        'Avec si peu de bulletins, les totaux révéleraient comment chacun a voté. Ils s\'afficheront automatiquement une fois le seuil atteint.</p></div>';
+      el.innerHTML = count(n) + '<div class="results-hidden"><p style="margin:0"><strong>Résultats masqués</strong> : il faut au moins ' + t +
+        ' votant' + (t > 1 ? 's' : '') + ' pour les afficher (' + n + ' pour l\'instant).</p><p class="muted" style="font-size:13px;margin:6px 0 0">' +
+        'Avec si peu de bulletins, les totaux révéleraient comment chacun a voté. Ils s\'afficheront ici automatiquement une fois le seuil atteint.</p></div>';
       return;
     }
     const opts = data.options || [];
@@ -23,7 +24,7 @@
     const fmt = (t) => (t > 0 ? '+' + t : String(t));
     const cls = (t) => (t > 0 ? 'pos' : (t < 0 ? 'neg' : ''));
     const half = (t) => (Math.abs(t) / maxAbs * 50).toFixed(1);
-    let html = '<div class="res-list">';
+    let html = count(data.ballotCount || 0) + '<div class="res-list">';
     for (const o of opts) {
       const thumb = o.has_image ? '<img class="res-thumb" src="/options/' + o.id + '/image" alt="">' : '';
       const tie = rankCount[o.rank] > 1 ? '<span class="tie">ex æquo</span>' : '';

@@ -7,6 +7,7 @@
   function fmt(t) { return t > 0 ? '+' + t : String(t); }
   function scoreCls(t) { return t > 0 ? 'pos' : (t < 0 ? 'neg' : ''); }
 %>
+<p class="voter-count"><strong><%= ballotCount %></strong> votant<%= ballotCount > 1 ? 's' : '' %></p>
 <div class="res-list">
   <% options.forEach(function (o) { %>
     <div class="res-row">

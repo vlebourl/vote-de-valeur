@@ -19,7 +19,7 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
   - **name only** (lightweight mode for trusted groups): one name = one vote;
   - any poll can also be **private** (link + password).
 - **Secret or nominative ballot**: by default nobody, not even the organiser, can link a ballot to a voter. A poll can be switched to nominative, in which case voters are warned on the ballot.
-- **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email.
+- **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email (which only recalls the voter's own scores, never results).
 - **Publication threshold**: results stay hidden, for voters and organiser alike, until a poll reaches a minimum number of ballots (5 by default): with one or two ballots, totals would reveal how people voted.
 - **Ranking**: sum of scores, abstention counts as 0, ties share the same rank ("1224" ranking).
 - **REST API** for organisers (token auth, OpenAPI docs): see below.
