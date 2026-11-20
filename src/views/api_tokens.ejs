@@ -1,0 +1,68 @@
+<%- include('partials/header', { pageTitle: 'API' }) %>
+<div class="row-actions" style="justify-content:space-between">
+  <h1>API</h1>
+  <a href="/dashboard" class="muted">← Mes votes</a>
+</div>
+<p class="muted">Créez et gérez vos votes depuis un script ou une autre application. Base : <code><%= apiBase %></code> · <a href="/api/docs">documentation</a></p>
+
+<% if (notice) { %><div class="notice"><%= notice %></div><% } %>
+<% if (error) { %><div class="error"><%= error %></div><% } %>
+
+<% if (created) { %>
+  <div class="card">
+    <h2 style="margin-top:0">Jeton créé : « <%= created.record.name %> »</h2>
+    <div class="error" style="background:#fffbeb;border-color:#fde68a;color:#b45309">
+      Copiez-le maintenant : il ne sera <strong>plus jamais affiché</strong>. Traitez-le comme un mot de passe.
+    </div>
+    <div class="share-box">
+      <input type="text" id="new-token" value="<%= created.token %>" readonly>
+      <button class="btn btn-sm" type="button" onclick="navigator.clipboard.writeText(document.getElementById('new-token').value)">Copier</button>
+    </div>
+    <p class="field-hint">Exemple : <code>curl -H "Authorization: Bearer $VDV_TOKEN" <%= apiBase %>/polls</code></p>
+  </div>
+<% } %>
+
+<div class="card">
+  <h2 style="margin-top:0">Nouveau jeton</h2>
+  <form method="post" action="/account/api/tokens">
+    <label for="name">Nom (pour vous y retrouver)</label>
+    <input type="text" id="name" name="name" required maxlength="100" placeholder="Ex : script d'assemblée générale">
+    <label>Portée</label>
+    <div class="checkbox-row" style="margin-top:6px">
+      <input type="radio" id="scope_read" name="scope" value="read" checked>
+      <label for="scope_read">Lecture seule : lister les votes, lire les résultats</label>
+    </div>
+    <div class="checkbox-row" style="margin-top:6px">
+      <input type="radio" id="scope_write" name="scope" value="write">
+      <label for="scope_write">Lecture et écriture : créer, modifier, clôturer, supprimer, inviter</label>
+    </div>
+    <button class="btn btn-sm" type="submit" style="margin-top:12px">Créer le jeton</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Jetons actifs</h2>
+  <% if (tokens.length === 0) { %>
+    <p class="muted">Aucun jeton.</p>
+  <% } else { %>
+    <table class="results">
+      <thead><tr><th>Nom</th><th>Début</th><th>Portée</th><th>Dernière utilisation</th><th></th></tr></thead>
+      <tbody>
+        <% tokens.forEach(function (t) { %>
+          <tr>
+            <td><%= t.name %></td>
+            <td><code><%= t.token_prefix %>…</code></td>
+            <td><%= t.scope === 'write' ? 'lecture et écriture' : 'lecture seule' %></td>
+            <td><%= t.last_used_at ? formatDateTime(t.last_used_at) : 'jamais' %></td>
+            <td>
+              <form method="post" action="/account/api/tokens/<%= t.id %>/revoke" onsubmit="return confirm('Révoquer ce jeton ? Les scripts qui l’utilisent cesseront de fonctionner.')">
+                <button class="btn btn-sm btn-danger" type="submit">Révoquer</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

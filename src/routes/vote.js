@@ -3,16 +3,16 @@ import jwt from 'jsonwebtoken';
 import { query, tx } from '../db.js';
 import { config } from '../config.js';
 import { hashEmail, verifyPassword } from '../auth.js';
-import { newToken, hashToken, sealWithToken, openWithToken } from '../tokens.js';
+import { newToken, hashToken, openWithToken } from '../tokens.js';
 import { requireUuidParam } from '../security.js';
-import { sendMagicLink, sendVoteConfirmation } from '../mailer.js';
+import { sendVoteConfirmation } from '../mailer.js';
 import { computeResults } from '../results.js';
+import { isClosed } from '../services/polls.js';
+import { sendVoterLink, normalizeEmail, resultsUrl } from '../services/voters.js';
 
 const router = Router();
 router.param('id', requireUuidParam);
 
-const ballotUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/ballot/${token}`;
-const resultsUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/results/${token}`;
 
 async function getPoll(id) {
   const { rows } = await query('SELECT * FROM polls WHERE id = $1', [id]);
@@ -28,12 +28,6 @@ async function getVoterByToken(pollId, token) {
   return rows[0] || null;
 }
 
-// Un vote est-il effectivement clos ? (statut ou date de clôture dépassée)
-function isClosed(poll) {
-  if (poll.status === 'closed') return true;
-  if (poll.close_at && new Date(poll.close_at) <= new Date()) return true;
-  return false;
-}
 
 // Cookie prouvant l'accès à un vote privé
 function accessCookieName(id) { return `vv_access_${id.slice(0, 8)}`; }
@@ -81,33 +75,12 @@ router.post('/vote/:id/request', async (req, res) => {
   if (poll.is_private && !hasAccess(req, poll)) return res.redirect(`/vote/${poll.id}`);
   if (isClosed(poll)) return res.render('vote_email', { poll, closed: true, sent: false });
 
-  const email = String(req.body.email || '').trim().toLowerCase();
-  if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  const email = normalizeEmail(req.body.email);
+  if (!email) {
     return res.status(400).render('vote_email', { poll, closed: false, sent: false, error: 'Email invalide.' });
   }
-  const name = String(req.body.name || '').trim().slice(0, 120);
-  const token = newToken();
-
-  // Scrutin nominatif : email et nom en clair (vote assumé non secret).
-  // Scrutin secret : l'email n'est stocké que chiffré avec le jeton du votant,
-  // le temps d'envoyer la confirmation de vote, puis effacé.
-  const clearEmail = poll.is_nominative ? email : null;
-  const displayName = poll.is_nominative ? (name || null) : null;
-  const sealedEmail = poll.is_nominative ? null : sealWithToken(token, email);
-
-  await query(
-    `INSERT INTO poll_voters (poll_id, email_hash, token_hash, email, email_sealed, display_name)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (poll_id, email_hash) DO UPDATE SET
-       token_hash   = EXCLUDED.token_hash,
-       email        = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.email ELSE poll_voters.email END,
-       email_sealed = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.email_sealed END,
-       display_name = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.display_name ELSE poll_voters.display_name END`,
-    [poll.id, hashEmail(email), hashToken(token), clearEmail, sealedEmail, displayName]
-  );
-
   try {
-    await sendMagicLink({ to: email, pollTitle: poll.title, url: ballotUrl(poll.id, token) });
+    await sendVoterLink(poll, email, req.body.name);
   } catch (err) {
     console.error('Envoi email échoué :', err);
     return res.status(500).render('vote_email', {

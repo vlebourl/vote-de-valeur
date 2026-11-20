@@ -21,6 +21,7 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
 - **Vote secret ou nominatif** : par défaut, personne, pas même l'organisateur, ne peut relier un bulletin à un votant. Un scrutin peut passer en nominatif ; les votants en sont alors avertis sur le bulletin.
 - **Résultats** invisibles avant d'avoir voté (pas d'influence), puis affichés **en direct** via un lien personnel permanent, aussi envoyé dans l'email de confirmation.
 - **Classement** : somme des notes, abstention = 0, ex æquo au même rang (méthode « 1224 »).
+- **API REST** pour les organisateurs (jetons, documentation OpenAPI) : voir plus bas.
 
 ## Le secret du bulletin
 
@@ -33,9 +34,38 @@ En scrutin secret, la base ne contient rien qui relie un votant à son bulletin 
 
 Limites, dites franchement : quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée.
 
+## API REST
+
+Les organisateurs peuvent créer et gérer leurs votes depuis un script. Créez un jeton dans le menu **API** (portée lecture seule ou lecture et écriture ; seule son empreinte est stockée, il n'est affiché qu'une fois), puis :
+
+```bash
+export VDV_TOKEN=vdv_...
+curl -H "Authorization: Bearer $VDV_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Séminaire","options":["Annecy","Lyon","Bordeaux"],"close_at":"2026-12-15T18:00:00+01:00"}' \
+  https://vote.exemple.fr/api/v1/polls
+
+# envoie à chaque votant son lien de vote personnel
+curl -H "Authorization: Bearer $VDV_TOKEN" -H "Content-Type: application/json" \
+  -d '{"recipients":["alice@exemple.fr","bob@exemple.fr"]}' \
+  https://vote.exemple.fr/api/v1/polls/$POLL_ID/invitations
+
+curl -H "Authorization: Bearer $VDV_TOKEN" https://vote.exemple.fr/api/v1/polls/$POLL_ID/results
+```
+
+Points d'accès :
+- scrutins : lister, créer, lire, modifier (titre, description, date de clôture, ouvert/clos, nominatif), supprimer ;
+- options : ajouter (JSON, ou multipart avec image), modifier, supprimer ;
+- résultats en temps réel ;
+- participants d'un scrutin nominatif ;
+- invitations.
+
+Documentation interactive sur `/api/docs`, spécification OpenAPI 3.1 sur `/api/v1/openapi.json`.
+
+Par choix, **le vote n'est pas exposé** : un votant vote toujours par son lien personnel, ce qui préserve « un email = un vote » et le secret du bulletin. Limites : 600 requêtes par 15 minutes et par jeton ; 10 envois d'invitations par heure, de 100 destinataires au plus.
+
 ## Stack
 
-Node.js 20+ · Express 5 · PostgreSQL (`pg`) · rendu serveur EJS · nodemailer (SMTP) · cookie de session httpOnly (JWT) + bcrypt. Aucune étape de build côté navigateur : un peu de JavaScript natif pour les résultats en direct.
+Node.js 20+ · Express 5 · API REST OpenAPI 3.1 · PostgreSQL (`pg`) · rendu serveur EJS · nodemailer (SMTP) · cookie de session httpOnly (JWT) + bcrypt. Aucune étape de build côté navigateur : un peu de JavaScript natif pour les résultats en direct.
 
 Sécurité : validation des UUID de toutes les routes, contrôle d'origine sur toute écriture (CSRF), limitation de débit par IP (connexion, inscription, liens magiques, mots de passe des scrutins), pas de redirection ouverte, en-têtes de sécurité (`Referrer-Policy: same-origin` : les jetons ne fuient pas par le `Referer`), refus de démarrer en production avec des secrets absents ou faibles.
 
@@ -109,11 +139,12 @@ Pour redéployer depuis votre poste : `deploy/coolify.env` (à créer depuis `de
 - `options` : options d'un scrutin ; les images sont stockées dans PostgreSQL, aucun volume de fichiers à gérer.
 - `poll_voters` : participation (`email_hash`, `token_hash`, email chiffré jusqu'au vote, dates), unique par `(poll_id, email_hash)`.
 - `ballots` + `ballot_scores` : bulletins anonymes et leurs notes de −2 à +2.
+- `api_tokens` : jetons d'API des organisateurs (empreinte seule, portée, dernière utilisation, révocation).
 
 ## Pistes d'évolution
 
 - Choix du mode de calcul par scrutin (somme, moyenne, médiane ; le *jugement majoritaire* résiste mieux au vote stratégique).
-- Import d'une liste d'invités et relances.
+- Relances automatiques des invités n'ayant pas voté.
 - Export CSV des résultats.
 
 ## Licence

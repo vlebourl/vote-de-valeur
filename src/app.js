@@ -11,6 +11,8 @@ import { securityHeaders, sameOriginWrites, createLimiters } from './security.js
 import authRoutes from './routes/auth.js';
 import pollRoutes from './routes/polls.js';
 import voteRoutes from './routes/vote.js';
+import accountRoutes from './routes/account.js';
+import { createApiRouter } from './routes/api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -29,7 +31,9 @@ export function createApp({ rateLimits = true } = {}) {
   app.use((req, res, next) => { req.body ??= {}; next(); });
   app.use(cookieParser());
   app.use(loadUser);
-  app.use(sameOriginWrites({ baseUrl: config.baseUrl }));
+  // L'API s'authentifie par jeton, jamais par cookie : pas de contrôle d'origine.
+  const checkOrigin = sameOriginWrites({ baseUrl: config.baseUrl });
+  app.use((req, res, next) => (req.path.startsWith('/api/v1/') ? next() : checkOrigin(req, res, next)));
 
   if (rateLimits) {
     const limit = createLimiters();
@@ -38,6 +42,9 @@ export function createApp({ rateLimits = true } = {}) {
     app.post('/vote/:id/access', limit.pollPassword);
     app.post('/vote/:id/name', limit.nameVote);
   }
+
+  app.use('/api/v1', createApiRouter({ rateLimits }));
+  app.get('/api/docs', (req, res) => res.render('api_docs'));
 
   app.get('/', (req, res) => res.render('landing'));
 
@@ -54,6 +61,7 @@ export function createApp({ rateLimits = true } = {}) {
   app.use(authRoutes);
   app.use(pollRoutes);
   app.use(voteRoutes);
+  app.use(accountRoutes);
 
   app.use((req, res) => res.status(404).render('error', { message: 'Page introuvable.' }));
 

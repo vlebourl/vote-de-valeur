@@ -127,3 +127,19 @@ UPDATE poll_voters pv
  WHERE p.id = pv.poll_id AND NOT p.is_nominative
    AND NOT EXISTS (SELECT 1 FROM ballots b WHERE b.voter_id = pv.id)
    AND (pv.voted_at <> date_trunc('day', pv.voted_at, 'UTC') OR pv.verified_at <> date_trunc('day', pv.verified_at, 'UTC'));
+
+-- === Jetons d'API (accès programmatique des organisateurs) ===
+-- Seule l'empreinte SHA-256 du jeton est stockée ; token_prefix sert à
+-- reconnaître un jeton dans l'interface sans pouvoir l'utiliser.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  token_hash   TEXT NOT NULL UNIQUE,
+  token_prefix TEXT NOT NULL,
+  scope        TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);

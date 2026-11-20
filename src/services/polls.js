@@ -1,0 +1,249 @@
+// Logique métier des scrutins, partagée par les pages HTML et l'API.
+// Les fonctions reçoivent des valeurs déjà extraites de la requête et lèvent
+// une ServiceError en cas de refus ; elles ne connaissent ni Express ni HTTP.
+import { query, tx } from '../db.js';
+import { hashPassword } from '../auth.js';
+import { computeResults } from '../results.js';
+import { notFound, forbidden, invalid, conflict } from './errors.js';
+
+export const LIMITS = {
+  title: 200,
+  description: 5000,
+  label: 200,
+  optionDescription: 1000,
+  options: 50,
+  minOptions: 2,
+  password: { min: 4, max: 200 },
+};
+export const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+export const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+
+const text = (v) => (v === undefined || v === null ? '' : String(v).trim());
+
+function checkLength(value, max, what) {
+  if (value.length > max) throw invalid(`${what} : ${max} caractères maximum.`);
+  return value;
+}
+
+// Normalise une option ; image = { buffer, mimetype } ou null.
+function normalizeOption(o, index) {
+  const label = checkLength(text(o.label), LIMITS.label, `Intitulé de l'option ${index + 1}`);
+  const description = checkLength(text(o.description), LIMITS.optionDescription, `Description de l'option ${index + 1}`);
+  const image = o.image || null;
+  if (image && !IMAGE_MIME.has(image.mimetype)) throw invalid('Image : formats PNG, JPEG, WebP ou GIF uniquement.');
+  return { label, description, image };
+}
+
+// Un vote est-il effectivement clos ? (statut ou date de clôture dépassée)
+export function isClosed(poll) {
+  if (poll.status === 'closed') return true;
+  return Boolean(poll.close_at && new Date(poll.close_at) <= new Date());
+}
+
+export async function listPolls(ownerId) {
+  const { rows } = await query(
+    `SELECT p.*, (SELECT COUNT(*) FROM ballots b WHERE b.poll_id = p.id)::int AS ballots
+       FROM polls p
+      WHERE p.owner_id = $1
+      ORDER BY p.created_at DESC`,
+    [ownerId]
+  );
+  return rows;
+}
+
+// input : { title, description, isPrivate, password, isNominative, authMode,
+//           closeAt (Date|null), options: [{ label, description, image }] }
+export async function createPoll(ownerId, input) {
+  const title = checkLength(text(input.title), LIMITS.title, 'Titre');
+  const description = checkLength(text(input.description), LIMITS.description, 'Description');
+  const isPrivate = Boolean(input.isPrivate);
+  const password = input.password === undefined || input.password === null ? '' : String(input.password);
+  const authMode = input.authMode === 'name' ? 'name' : 'email';
+  const options = (input.options || [])
+    .map(normalizeOption)
+    .filter((o) => o.label.length > 0 || o.image);
+
+  if (!title) throw invalid('Titre requis.');
+  if (options.length < LIMITS.minOptions) throw invalid('Au moins 2 options (image ou intitulé) sont requises.');
+  if (options.length > LIMITS.options) throw invalid(`${LIMITS.options} options au maximum.`);
+  if (isPrivate && (password.length < LIMITS.password.min || password.length > LIMITS.password.max)) {
+    throw invalid('Mot de passe de 4 à 200 caractères pour un vote privé.');
+  }
+  if (input.closeAt !== null && input.closeAt !== undefined && !(input.closeAt instanceof Date && !Number.isNaN(input.closeAt.getTime()))) {
+    throw invalid('Date de clôture invalide.');
+  }
+  const passwordHash = isPrivate ? await hashPassword(password) : null;
+
+  return tx(async (client) => {
+    const { rows } = await client.query(
+      `INSERT INTO polls (owner_id, title, description, is_private, password_hash, close_at, is_nominative, auth_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [ownerId, title, description, isPrivate, passwordHash, input.closeAt || null, Boolean(input.isNominative), authMode]
+    );
+    const id = rows[0].id;
+    for (let i = 0; i < options.length; i++) {
+      const o = options[i];
+      await client.query(
+        `INSERT INTO options (poll_id, label, description, image_data, image_mime, position)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, o.label, o.description, o.image ? o.image.buffer : null, o.image ? o.image.mimetype : null, i]
+      );
+    }
+    return id;
+  });
+}
+
+// Scrutin appartenant à l'utilisateur, ou erreur (404 s'il n'existe pas,
+// 403 s'il appartient à quelqu'un d'autre).
+export async function getOwnedPoll(ownerId, pollId) {
+  const { rows } = await query('SELECT * FROM polls WHERE id = $1', [pollId]);
+  const poll = rows[0];
+  if (!poll) throw notFound();
+  if (poll.owner_id !== ownerId) throw forbidden();
+  return poll;
+}
+
+export async function listOptions(pollId) {
+  const { rows } = await query(
+    `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
+       FROM options WHERE poll_id = $1 ORDER BY position`,
+    [pollId]
+  );
+  return rows;
+}
+
+export async function voterStats(pollId) {
+  const { rows } = await query(
+    `SELECT COUNT(*)::int AS requested, COUNT(voted_at)::int AS voted
+       FROM poll_voters WHERE poll_id = $1`,
+    [pollId]
+  );
+  return rows[0];
+}
+
+export { computeResults };
+
+// Détail nominatif des participants (scrutin nominatif uniquement) : identité
+// en clair et notes de leur bulletin lié. Les votants enregistrés avant le
+// passage en nominatif restent anonymes (identité nulle, bulletin non lié).
+export async function listParticipants(poll) {
+  if (!poll.is_nominative) throw conflict('Détail des participants disponible seulement pour un scrutin nominatif.');
+  const { rows: voters } = await query(
+    `SELECT pv.email, pv.display_name, pv.voted_at, b.id AS ballot_id
+       FROM poll_voters pv
+       LEFT JOIN ballots b ON b.voter_id = pv.id
+      WHERE pv.poll_id = $1
+      ORDER BY (pv.voted_at IS NULL), pv.display_name NULLS LAST, pv.email NULLS LAST, pv.created_at`,
+    [poll.id]
+  );
+  const ballotIds = voters.filter((v) => v.ballot_id).map((v) => v.ballot_id);
+  const scoresByBallot = {};
+  if (ballotIds.length) {
+    const { rows: scores } = await query(
+      'SELECT ballot_id, option_id, score FROM ballot_scores WHERE ballot_id = ANY($1)',
+      [ballotIds]
+    );
+    for (const r of scores) (scoresByBallot[r.ballot_id] ||= {})[r.option_id] = r.score;
+  }
+  return voters.map((v) => ({
+    email: v.email,
+    name: v.display_name,
+    voted: Boolean(v.voted_at),
+    anonymous: Boolean(v.voted_at) && !v.ballot_id, // a voté avant le passage en nominatif
+    scores: v.ballot_id ? (scoresByBallot[v.ballot_id] || {}) : null,
+  }));
+}
+
+// changes : { title?, description?, closeAt? (Date ou null pour retirer),
+//             status? ('open'|'closed'), isNominative? }
+export async function updatePoll(poll, changes) {
+  const sets = [];
+  const values = [];
+  const set = (column, value) => { values.push(value); sets.push(`${column} = $${values.length}`); };
+
+  if (changes.title !== undefined) {
+    const title = checkLength(text(changes.title), LIMITS.title, 'Titre');
+    if (!title) throw invalid('Le titre ne peut pas être vide.');
+    set('title', title);
+  }
+  if (changes.description !== undefined) {
+    set('description', checkLength(text(changes.description), LIMITS.description, 'Description'));
+  }
+  if (changes.closeAt !== undefined) {
+    if (changes.closeAt !== null && !(changes.closeAt instanceof Date && !Number.isNaN(changes.closeAt.getTime()))) {
+      throw invalid('Date de clôture invalide.');
+    }
+    set('close_at', changes.closeAt);
+  }
+  if (changes.status !== undefined) {
+    if (changes.status !== 'open' && changes.status !== 'closed') throw invalid('Statut : "open" ou "closed".');
+    set('status', changes.status);
+  }
+  if (changes.isNominative !== undefined) set('is_nominative', Boolean(changes.isNominative));
+  if (!sets.length) return poll;
+
+  values.push(poll.id);
+  const { rows } = await query(`UPDATE polls SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING *`, values);
+  return rows[0];
+}
+
+export async function deletePoll(poll) {
+  await query('DELETE FROM polls WHERE id = $1', [poll.id]);
+}
+
+// option : { label, description, image }
+export async function addOption(poll, option) {
+  const o = normalizeOption(option, 0);
+  if (!o.label && !o.image) throw invalid('Une option doit avoir au moins un intitulé ou une image.');
+  return tx(async (client) => {
+    // Verrou sur le scrutin : positions et nombre d'options cohérents en cas d'ajouts simultanés.
+    await client.query('SELECT id FROM polls WHERE id = $1 FOR UPDATE', [poll.id]);
+    const { rows: stats } = await client.query(
+      'SELECT COUNT(*)::int AS n, COALESCE(MAX(position), -1) + 1 AS next FROM options WHERE poll_id = $1',
+      [poll.id]
+    );
+    if (stats[0].n >= LIMITS.options) throw conflict(`${LIMITS.options} options au maximum.`);
+    const { rows } = await client.query(
+      `INSERT INTO options (poll_id, label, description, image_data, image_mime, position)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, label, description, position, (image_data IS NOT NULL) AS has_image`,
+      [poll.id, o.label, o.description, o.image ? o.image.buffer : null, o.image ? o.image.mimetype : null, stats[0].next]
+    );
+    return rows[0];
+  });
+}
+
+// changes : { label?, description? }
+export async function editOption(poll, optionId, changes) {
+  const { rows } = await query(
+    'SELECT label, description, (image_data IS NOT NULL) AS has_image FROM options WHERE id = $1 AND poll_id = $2',
+    [optionId, poll.id]
+  );
+  const current = rows[0];
+  if (!current) throw notFound('Option introuvable.');
+  const label = changes.label === undefined ? current.label : checkLength(text(changes.label), LIMITS.label, 'Intitulé');
+  const description = changes.description === undefined
+    ? current.description
+    : checkLength(text(changes.description), LIMITS.optionDescription, 'Description');
+  if (!label && !current.has_image) throw invalid('Une option sans image doit conserver un intitulé.');
+  const { rows: updated } = await query(
+    `UPDATE options SET label = $1, description = $2 WHERE id = $3 AND poll_id = $4
+     RETURNING id, label, description, position, (image_data IS NOT NULL) AS has_image`,
+    [label, description, optionId, poll.id]
+  );
+  return updated[0];
+}
+
+// Un scrutin doit conserver au moins 2 options.
+export async function deleteOption(poll, optionId) {
+  await tx(async (client) => {
+    await client.query('SELECT id FROM polls WHERE id = $1 FOR UPDATE', [poll.id]);
+    const { rows } = await client.query(
+      'SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE id = $2)::int AS found FROM options WHERE poll_id = $1',
+      [poll.id, optionId]
+    );
+    if (!rows[0].found) throw notFound('Option introuvable.');
+    if (rows[0].n <= LIMITS.minOptions) throw conflict('Un vote doit conserver au moins 2 options.');
+    await client.query('DELETE FROM options WHERE id = $1 AND poll_id = $2', [optionId, poll.id]);
+  });
+}

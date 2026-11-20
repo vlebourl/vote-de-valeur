@@ -21,6 +21,7 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
 - **Secret or nominative ballot**: by default nobody, not even the organiser, can link a ballot to a voter. A poll can be switched to nominative, in which case voters are warned on the ballot.
 - **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email.
 - **Ranking**: sum of scores, abstention counts as 0, ties share the same rank ("1224" ranking).
+- **REST API** for organisers (token auth, OpenAPI docs): see below.
 
 ## How ballot secrecy works
 
@@ -33,9 +34,31 @@ In a secret poll the database never holds anything that ties a voter to their ba
 
 Limits, stated plainly: someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day.
 
+## REST API
+
+Organisers can create and manage polls from scripts. Create a token in the **API** menu (read-only or read-write scope; only its hash is stored, it is shown once), then:
+
+```bash
+export VDV_TOKEN=vdv_...
+curl -H "Authorization: Bearer $VDV_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Team offsite","options":["Annecy","Lyon","Bordeaux"],"close_at":"2026-12-15T18:00:00+01:00"}' \
+  https://vote.example.org/api/v1/polls
+
+# email each voter their personal ballot link
+curl -H "Authorization: Bearer $VDV_TOKEN" -H "Content-Type: application/json" \
+  -d '{"recipients":["alice@example.org","bob@example.org"]}' \
+  https://vote.example.org/api/v1/polls/$POLL_ID/invitations
+
+curl -H "Authorization: Bearer $VDV_TOKEN" https://vote.example.org/api/v1/polls/$POLL_ID/results
+```
+
+Endpoints: list, create, read, update (title, description, closing date, open/closed, nominative), delete polls; add (JSON or multipart with image), edit and delete options; live results; participants of nominative polls; invitations. Interactive documentation is served at `/api/docs`, and the OpenAPI 3.1 spec at `/api/v1/openapi.json`.
+
+By design, **voting is not exposed**: a voter always votes through their personal link, which keeps "one email, one vote" and ballot secrecy intact. Limits: 600 requests per 15 minutes per token, 10 invitation batches of up to 100 recipients per hour.
+
 ## Tech stack
 
-Node.js 20+ · Express 5 · PostgreSQL (`pg`) · EJS server-side rendering · nodemailer (SMTP) · httpOnly JWT session cookie + bcrypt. No front-end build step: a little vanilla JS for live results.
+Node.js 20+ · Express 5 · REST API with OpenAPI 3.1 · PostgreSQL (`pg`) · EJS server-side rendering · nodemailer (SMTP) · httpOnly JWT session cookie + bcrypt. No front-end build step: a little vanilla JS for live results.
 
 Security hardening: UUID validation on every route parameter, same-origin check on every write (CSRF), per-IP rate limiting on login, sign-up, magic links and poll passwords, no open redirect, security headers (`Referrer-Policy: same-origin` keeps tokens out of `Referer`), and the app refuses to start in production with missing or weak secrets.
 
@@ -95,6 +118,7 @@ The `Dockerfile` builds a small production image (non-root user, `npm ci`, healt
 - `options`: poll options; images are stored in PostgreSQL, so there is no file volume to manage.
 - `poll_voters`: participation (`email_hash`, `token_hash`, encrypted email until the vote, dates), unique per `(poll_id, email_hash)`.
 - `ballots` + `ballot_scores`: anonymous ballots and their −2…+2 scores.
+- `api_tokens`: organisers' API tokens (hash only, scope, last use, revocation).
 
 ## Licence
 
