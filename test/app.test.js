@@ -4,7 +4,7 @@ import request from 'supertest';
 import pool from '../src/db.js';
 import { hashToken } from '../src/tokens.js';
 import {
-  newApp, organizer, createPoll, requestBallot, submitBallot, lastMail, pathOf, unique, query,
+  newApp, organizer, createPoll, requestBallot, submitBallot, ballotForm, lastMail, pathOf, unique, query,
 } from './helpers.js';
 
 after(() => pool.end());
@@ -83,11 +83,12 @@ test('secret du bulletin : ni email, ni jeton, ni horodatage reliant le votant �
   assert.ok(!dump.includes(token));
 });
 
-test('un votant ne peut voter qu\'une fois, même en soumettant deux fois en parallèle', async () => {
+test('un votant ne peut voter qu\'une fois, même avec dix soumissions simultanées', async () => {
   const { agent } = await organizer(app);
   const pollId = await createPoll(agent);
   const ballot = await requestBallot(app, pollId, `${unique('double')}@test.local`);
-  await Promise.all([submitBallot(app, ballot, { Lyon: 2 }), submitBallot(app, ballot, { Lyon: -2 })]);
+  const form = await ballotForm(app, ballot, { Lyon: 2 });
+  await Promise.all(Array.from({ length: 10 }, () => request(app).post(ballot).type('form').send(form)));
   const { rows } = await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId]);
   assert.equal(rows[0].n, 1);
 });

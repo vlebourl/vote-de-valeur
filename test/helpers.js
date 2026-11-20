@@ -50,12 +50,18 @@ export async function requestBallot(app, pollId, email, extra = {}) {
   return pathOf(lastMail(email, 'magic-link').url);
 }
 
-// Remplit et soumet un bulletin ; scores = { Lyon: 2, ... } (0 par défaut).
-export async function submitBallot(app, ballotPath, scores = {}) {
+// Lit le bulletin et prépare le formulaire ; scores = { Lyon: 2, ... } (0 par défaut).
+export async function ballotForm(app, ballotPath, scores = {}) {
   const page = await request(app).get(ballotPath).expect(200);
   const ids = [...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]);
   const labels = [...page.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]);
   const form = {};
   [...new Set(ids)].forEach((id, i) => { form[`score_${id}`] = String(scores[labels[i]] ?? 0); });
+  return form;
+}
+
+// Remplit et soumet un bulletin.
+export async function submitBallot(app, ballotPath, scores = {}) {
+  const form = await ballotForm(app, ballotPath, scores);
   return request(app).post(ballotPath).type('form').send(form);
 }
