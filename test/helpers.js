@@ -64,8 +64,8 @@ export async function ballotForm(app, ballotPath, scores = {}) {
   return form;
 }
 
-// Remplit et soumet un bulletin.
-export async function submitBallot(app, ballotPath, scores = {}) {
+// Remplit et soumet un bulletin ; extra : autres champs (ex. { notify: 'on' }).
+export async function submitBallot(app, ballotPath, scores = {}, extra = {}) {
   const form = await ballotForm(app, ballotPath, scores);
-  return request(app).post(ballotPath).type('form').send(form);
+  return request(app).post(ballotPath).type('form').send({ ...form, ...extra });
 }

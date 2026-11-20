@@ -53,6 +53,7 @@ test('migration d\'une base existante', async () => {
   assert.ok(!('magic_token' in voter));
   assert.equal(voter.email, null);
   assert.equal(voter.voted_at.toISOString().slice(11), '00:00:00.000Z');
+  assert.equal(voter.rated_option_ids.length, 0, 'aucune option dans ce scrutin de test : liste vide, non nulle');
 
   const secretBallot = (await client.query('SELECT created_at FROM ballots WHERE poll_id = $1', [secret.id])).rows[0];
   assert.equal(secretBallot.created_at, null);

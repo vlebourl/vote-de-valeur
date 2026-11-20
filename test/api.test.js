@@ -324,6 +324,24 @@ describe('votants et résultats', () => {
   });
 });
 
+describe('avis de nouveaux choix', () => {
+  test('nombres seulement, jamais d\'adresse', async () => {
+    const { call } = await client();
+    const { body: poll } = await newPoll(call).expect(201);
+    const voter = `${unique('api-avis')}@test.local`;
+    await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [voter] }).expect(200);
+    await submitBallot(app, pathOf(lastMail(voter, 'magic-link').url), { Lyon: 1 }, { notify: 'on' });
+    const none = await call('post', `/polls/${poll.id}/notifications`).send({}).expect(200);
+    assert.deepEqual(none.body, { eligible: 0, sent: 0, failed: 0 });
+    await call('post', `/polls/${poll.id}/options`).send({ label: 'Nantes' }).expect(201);
+    const res = await call('post', `/polls/${poll.id}/notifications`).send({}).expect(200);
+    assert.deepEqual(res.body, { eligible: 1, sent: 1, failed: 0 });
+    assert.ok(!JSON.stringify(res.body).includes(voter));
+    assert.deepEqual(lastMail(voter, 'new-options').labels, ['Nantes']);
+    await call('post', `/polls/${poll.id}/notifications`).send({ x: 1 }).expect(400);
+  });
+});
+
 describe('seuil de publication', () => {
   test('défaut à 5, résultats masqués, modifiable, bornes', async () => {
     const { call } = await client();
@@ -375,7 +393,7 @@ describe('documentation OpenAPI', () => {
       'delete /polls/{pollId}', 'delete /polls/{pollId}/options/{optionId}', 'get /me', 'get /polls',
       'get /polls/{pollId}', 'get /polls/{pollId}/participants', 'get /polls/{pollId}/results',
       'patch /polls/{pollId}', 'patch /polls/{pollId}/options/{optionId}', 'post /polls',
-      'post /polls/{pollId}/invitations', 'post /polls/{pollId}/options',
+      'post /polls/{pollId}/invitations', 'post /polls/{pollId}/notifications', 'post /polls/{pollId}/options',
       'put /polls/{pollId}/options/{optionId}/image',
     ]);
   });

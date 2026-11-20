@@ -105,6 +105,18 @@
   <p class="field-hint">Passer en nominatif ne dé-anonymise pas les votes déjà déposés (ils restent secrets) : seuls les votes suivants seront identifiables, et les votants en sont informés sur le bulletin.</p>
 </div>
 
+<% if (poll.auth_mode === 'email') { %>
+<div class="card">
+  <h2 style="margin-top:0">Nouveaux choix</h2>
+  <p style="margin-top:0"><strong><%= followups.subscribers %></strong> votant<%= followups.subscribers > 1 ? 's ont' : ' a' %> demandé à être prévenu<%= followups.subscribers > 1 ? 's' : '' %> si un choix est ajouté
+    · <strong><%= followups.pending %></strong> <%= followups.pending > 1 ? 'ont' : 'a' %> un choix ajouté depuis son vote, pas encore signalé.</p>
+  <form method="post" action="/polls/<%= poll.id %>/notify">
+    <button class="btn btn-sm" type="submit" <%- followups.pending ? '' : 'disabled' %>>Prévenir <%= followups.pending %> votant<%= followups.pending > 1 ? 's' : '' %></button>
+  </form>
+  <p class="field-hint">Après avoir ajouté une option : chaque votant concerné reçoit un nouveau lien pour noter les choix ajoutés (ses autres notes restent inchangées). Vous ne voyez jamais leurs adresses. Les votants peuvent aussi noter ces choix depuis leur lien de résultats.</p>
+</div>
+<% } %>
+
 <div class="card">
   <h2 style="margin-top:0">Participation</h2>
   <p><strong><%= voterStats.voted %></strong> vote<%= voterStats.voted > 1 ? 's' : '' %> exprimé<%= voterStats.voted > 1 ? 's' : '' %>

@@ -20,6 +20,7 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
   - et tout scrutin peut être **privé** (lien + mot de passe).
 - **Vote secret ou nominatif** : par défaut, personne, pas même l'organisateur, ne peut relier un bulletin à un votant. Un scrutin peut passer en nominatif ; les votants en sont alors avertis sur le bulletin.
 - **Résultats** invisibles avant d'avoir voté (pas d'influence), puis affichés **en direct** via un lien personnel permanent, aussi envoyé dans l'email de confirmation (qui ne rappelle que ses propres notes, jamais les résultats).
+- **Choix ajoutés après un vote** : le votant peut cocher « Prévenez-moi si un choix est ajouté » ; quand l'organisateur ajoute une option et clique sur *Prévenir*, il reçoit un nouveau lien personnel pour noter seulement les nouveaux choix (ses autres notes restent définitives). Sans cocher, son lien de résultats le propose aussi. Ces notes vont dans un bulletin complémentaire anonyme, qui ne compte pas comme un votant de plus.
 - **Seuil de publication** : les résultats restent masqués, pour les votants comme pour l'organisateur, tant que le scrutin n'a pas atteint un nombre minimal de bulletins (5 par défaut) : avec un ou deux bulletins, les totaux révéleraient les votes.
 - **Classement** : somme des notes, abstention = 0, ex æquo au même rang (méthode « 1224 »).
 - **API REST** pour les organisateurs (jetons, documentation OpenAPI) : voir plus bas.
@@ -30,6 +31,7 @@ En scrutin secret, la base ne contient rien qui relie un votant à son bulletin 
 
 - l'email (ou le nom) du votant n'est stocké que sous forme de **HMAC**, qui garantit un seul vote par personne. Les alias d'une même boîte comptent pour une (suffixes `+…` partout ; points et `googlemail.com` chez Gmail) ;
 - le jeton du lien magique n'est stocké que sous forme d'**empreinte SHA-256** : une fuite de la base ne donne accès à aucun bulletin ;
+- un votant qui demande à être prévenu des nouveaux choix voit son adresse gardée **chiffrée par une clé du serveur**, dans une table rattachée à son inscription et jamais à son bulletin, effacée à la clôture ; l'organisateur ne voit que des nombres ;
 - pour envoyer la confirmation, l'email est gardé **chiffré avec une clé dérivée du jeton du votant** (AES-256-GCM, HKDF). Le serveur ne peut le déchiffrer qu'au moment où le votant ouvre son lien pour voter, puis l'efface ;
 - les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour.
 

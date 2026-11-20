@@ -20,7 +20,7 @@ export async function computeResults(pollId) {
   );
 
   const { rows: ballotRows } = await query(
-    'SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1',
+    'SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1 AND NOT is_supplement',
     [pollId]
   );
   const ballotCount = ballotRows[0].n;

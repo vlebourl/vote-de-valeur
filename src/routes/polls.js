@@ -9,6 +9,7 @@ import { requireUuidParam } from '../security.js';
 import { parseCloseAt } from '../dates.js';
 import { ServiceError } from '../services/errors.js';
 import * as polls from '../services/polls.js';
+import { pendingCount, subscriberCount, notifySubscribers } from '../services/followups.js';
 
 const router = Router();
 router.param('id', requireUuidParam);
@@ -140,8 +141,9 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
     polls.listOptions(poll.id), polls.visibleResults(poll, 'owner'), polls.voterStats(poll.id),
   ]);
   const participants = poll.is_nominative ? await polls.listParticipants(poll) : null;
+  const followups = { subscribers: await subscriberCount(poll), pending: await pendingCount(poll) };
   res.render('poll_manage', {
-    poll, options, results, ballotCount, participants, resultsVisible: visible, threshold,
+    poll, options, results, ballotCount, participants, resultsVisible: visible, threshold, followups,
     voterStats: { invited: stats.requested, voted: stats.voted },
     baseUrl: config.baseUrl,
     notice: req.query.ok || null,
@@ -181,6 +183,15 @@ router.post('/polls/:id/options/:optId/edit', requireAuth, (req, res) => manageA
 router.post('/polls/:id/options/:optId/delete', requireAuth, (req, res) => manageAction(
   req, res, (poll) => polls.deleteOption(poll, req.params.optId).then(() => null), 'Option supprimée.'
 ));
+
+// Prévenir les votants qui l'ont demandé que de nouveaux choix sont à noter.
+// L'organisateur ne voit que des nombres, jamais les adresses.
+router.post('/polls/:id/notify', requireAuth, (req, res) => manageAction(req, res, async (poll) => {
+  const r = await notifySubscribers(poll, { max: 500 });
+  if (r.closed) return 'Le vote est clôturé : aucun avis envoyé.';
+  if (!r.eligible) return 'Aucun votant à prévenir : personne n\'a de nouveau choix à noter.';
+  return `Avis envoyé à ${r.sent} votant${r.sent > 1 ? 's' : ''}` + (r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''}).` : '.');
+}));
 
 router.post('/polls/:id/status', requireAuth, async (req, res) => {
   const poll = await ownedPoll(req, res);

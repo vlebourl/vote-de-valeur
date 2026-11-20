@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — 2026-11-20
+
+### Added
+- **Choices added after a vote.** Voters can opt in to be notified when a choice is added ("Prévenez-moi si un choix
+  est ajouté"). The organiser's *Notify* button (or `POST /api/v1/polls/{pollId}/notifications`) emails each concerned
+  voter a new personal link to rate only the choices added since their vote; their other scores stay final. Voters who
+  did not opt in are offered the same on their results page. Added scores go into an anonymous supplementary ballot,
+  which does not count as an extra voter. In name mode, entering the same name again opens the new choices.
+- Opt-in addresses are encrypted with a server-derived key, stored apart from ballots, never shown to the organiser
+  (counts only) and erased when the poll closes (status or closing date, checked hourly).
+- Only the options shown on the ballot count as rated: an option added while a ballot is open stays to be rated.
+
 ## 1.1.1 — 2026-11-20
 
 ### Added

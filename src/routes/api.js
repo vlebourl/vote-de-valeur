@@ -15,6 +15,7 @@ import * as polls from '../services/polls.js';
 import { authenticateApiToken } from '../services/apiTokens.js';
 import { sendVoterLink, normalizeEmail, canonicalEmail } from '../services/voters.js';
 import { createQuota } from '../services/quota.js';
+import { pendingCount, notifySubscribers } from '../services/followups.js';
 import { openapi } from '../api/openapi.js';
 
 export const MAX_INVITATIONS_PER_REQUEST = 100;
@@ -394,6 +395,25 @@ export function createApiRouter({ rateLimits = true } = {}) {
       }
     }
     res.status(sent.length ? 200 : 422).json({ sent, rejected });
+  });
+
+  // Prévient les votants qui l'ont demandé que des choix ont été ajoutés depuis
+  // leur vote. Réponse : des nombres seulement, jamais d'adresse.
+  router.post('/polls/:pollId/notifications', async (req, res) => {
+    const poll = await owned(req);
+    body(req, []);
+    if (polls.isClosed(poll)) throw conflict('Le vote est clôturé.');
+    const eligible = await pendingCount(poll);
+    if (rateLimits && eligible) {
+      if (!userQuota.take(req.api.user.id, eligible)) {
+        throw new ApiError(429, 'rate_limited', `Quota d’emails atteint : ${INVITATIONS_PER_HOUR.user} par heure et par organisateur.`);
+      }
+      if (!serviceQuota.take('service', eligible)) {
+        throw new ApiError(429, 'rate_limited', 'Quota global d’emails atteint. Réessayez plus tard.');
+      }
+    }
+    const r = await notifySubscribers(poll, { max: eligible });
+    res.json({ eligible: r.eligible, sent: r.sent, failed: r.failed });
   });
 
   router.use((req, res, next) => next(new ApiError(404, 'route_not_found', 'Route inconnue. Voir /api/v1/openapi.json.')));

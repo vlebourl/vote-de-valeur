@@ -6,7 +6,12 @@
     <strong>Scrutin nominatif.</strong> Votre vote sera visible par l'organisateur, associé à votre identité.
   </div>
 <% } %>
+<% var sup = (typeof supplement !== 'undefined' && supplement); %>
+<% if (sup) { %>
+  <div class="notice">Vous avez déjà voté. <strong><%= options.length > 1 ? 'Ces choix ont été ajoutés' : 'Ce choix a été ajouté' %> depuis votre vote</strong> : notez-<%= options.length > 1 ? 'les' : 'le' %> ci-dessous. Vos notes précédentes restent inchangées.</div>
+<% } else { %>
 <p>Attribuez une note à <strong>chaque option</strong>, de −2 (rejet) à +2 (soutien fort). 0 = neutre / sans avis.</p>
+<% } %>
 
 <% if (typeof modeChanged !== 'undefined' && modeChanged) { %>
   <div class="error">Le scrutin est passé en mode <strong><%= poll.is_nominative ? 'nominatif' : 'secret' %></strong> pendant que vous votiez : votre bulletin n'a pas été enregistré. Vérifiez vos notes et validez à nouveau.</div>
@@ -28,7 +33,14 @@
       </div>
     </div>
   <% }) %>
-  <button class="btn" type="submit">Valider mon vote</button>
-  <p class="field-hint">Attention : votre vote est <strong>définitif</strong> et ne pourra pas être modifié.</p>
+  <% if (typeof canNotify !== 'undefined' && canNotify) { %>
+    <div class="checkbox-row" style="margin:6px 0 16px">
+      <input type="checkbox" id="notify" name="notify">
+      <label for="notify">Prévenez-moi par email si un choix est ajouté (pour pouvoir le noter)</label>
+    </div>
+    <p class="field-hint" style="margin-top:-10px">Votre adresse est alors gardée chiffrée jusqu'à la clôture, sans aucun lien avec votre bulletin, puis effacée. L'organisateur ne la voit pas.</p>
+  <% } %>
+  <button class="btn" type="submit"><%= sup ? 'Valider ces notes' : 'Valider mon vote' %></button>
+  <p class="field-hint">Attention : <%= sup ? 'ces notes sont définitives' : 'votre vote est définitif' %> et ne pourr<%= sup ? 'ont' : 'a' %> pas être modifié<%= sup ? 'es' : '' %>.</p>
 </form>
 <%- include('partials/footer') %>

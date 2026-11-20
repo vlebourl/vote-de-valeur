@@ -3,6 +3,14 @@
    var pl = (typeof permalink !== 'undefined' && permalink) ? permalink : ''; %>
 <h1 style="margin-bottom:4px"><%= poll.title %></h1>
 <% if (jv) { %><div class="notice">Votre vote a bien été enregistré. Merci !<% if (poll.auth_mode === 'email') { %> Un email de confirmation vous a été envoyé.<% } %></div><% } %>
+<% if (typeof justSupplemented !== 'undefined' && justSupplemented) { %><div class="notice">Vos notes pour les nouveaux choix ont bien été enregistrées. Merci !</div><% } %>
+<% if (typeof newOptions !== 'undefined' && newOptions.length) { %>
+  <div class="card" style="border:2px solid var(--indigo)">
+    <p style="margin-top:0"><strong>Nouveau<%= newOptions.length > 1 ? 'x choix' : ' choix' %> depuis votre vote</strong> :
+      <%= newOptions.map(function (o) { return o.label || '(image)'; }).join(', ') %>.</p>
+    <a class="btn" href="/vote/<%= poll.id %>/ballot/<%= token %>">Noter <%= newOptions.length > 1 ? 'ces choix' : 'ce choix' %></a>
+  </div>
+<% } %>
 
 <div class="card">
   <div class="row-actions" style="justify-content:space-between">

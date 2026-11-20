@@ -20,6 +20,7 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
   - any poll can also be **private** (link + password).
 - **Secret or nominative ballot**: by default nobody, not even the organiser, can link a ballot to a voter. A poll can be switched to nominative, in which case voters are warned on the ballot.
 - **Results** are hidden until you have voted (no bandwagon effect), then shown **live** through a personal permanent link, also sent in the confirmation email (which only recalls the voter's own scores, never results).
+- **Choices added after voting**: a voter can tick "notify me if a choice is added"; when the organiser adds an option and clicks *Notify*, they receive a new personal link to rate only the new choices (their other scores stay final). Without ticking, their results link offers the same. The added scores go into an anonymous supplementary ballot that does not count as an extra voter.
 - **Publication threshold**: results stay hidden, for voters and organiser alike, until a poll reaches a minimum number of ballots (5 by default): with one or two ballots, totals would reveal how people voted.
 - **Ranking**: sum of scores, abstention counts as 0, ties share the same rank ("1224" ranking).
 - **REST API** for organisers (token auth, OpenAPI docs): see below.
@@ -30,6 +31,7 @@ In a secret poll the database never holds anything that ties a voter to their ba
 
 - the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person. Aliases of the same mailbox count as one (`+tag` suffixes everywhere; dots and `googlemail.com` for Gmail);
 - the magic-link token is stored only as a **SHA-256 hash**, so a database leak gives access to no ballot;
+- a voter who asks to be notified of new choices has their address kept **encrypted with a server key**, in a table linked to their registration and never to their ballot, erased when the poll closes; the organiser only ever sees counts;
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
 - ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
 

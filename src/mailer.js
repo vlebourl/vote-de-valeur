@@ -50,20 +50,44 @@ export async function sendMagicLink({ to, pollTitle, url }) {
   return transporter.sendMail({ from: FROM, to, subject, text, html });
 }
 
+// Avis à un votant qui l'a demandé : de nouveaux choix ont été ajoutés depuis
+// son vote. Le lien lui permet de les noter (et remplace son lien précédent).
+export async function sendNewOptionsNotice({ to, pollTitle, labels, url }) {
+  const subject = `Nouveau choix à noter : « ${pollTitle} »`;
+  const list = labels.map((l) => `  • ${l}`).join('\n');
+  const text = `Bonjour,\n\nVous avez voté pour « ${pollTitle} » et demandé à être prévenu(e) des nouveaux choix.\n` +
+    `Depuis votre vote, ${labels.length > 1 ? 'ces choix ont été ajoutés' : 'ce choix a été ajouté'} :\n${list}\n\n` +
+    `Notez-${labels.length > 1 ? 'les' : 'le'} avec ce lien personnel (vos autres notes restent inchangées) :\n${url}\n\n` +
+    `Ce lien remplace le précédent, y compris pour suivre les résultats. Ne le partagez pas.\n\n— Vote de valeur`;
+  const html = `<p>Bonjour,</p>
+<p>Vous avez voté pour <strong>« ${escapeHtml(pollTitle)} »</strong> et demandé à être prévenu(e) des nouveaux choix. Depuis votre vote :</p>
+<ul>${labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+<p><a href="${url}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Noter ${labels.length > 1 ? 'ces choix' : 'ce choix'}</a></p>
+<p style="color:#666;font-size:13px">Vos autres notes restent inchangées. Ce lien personnel remplace le précédent, y compris pour suivre les résultats : ne le partagez pas.</p>`;
+  if (DEV_MODE) {
+    keepInOutbox({ kind: 'new-options', to, url, labels });
+    console.log('\n📧 [SMTP_DEV_MODE] Avis de nouveau choix non envoyé :');
+    console.log(`   → ${to} : ${url}\n`);
+    return { devMode: true };
+  }
+  return transporter.sendMail({ from: FROM, to, subject, text, html });
+}
+
 // Confirmation envoyée au votant après son vote : le rappel de SES notes et le
 // permalien des résultats. Jamais de résultats dans l'email : un email se
 // transfère et se conserve, et un total figé sur peu de bulletins trahirait des votes.
-export async function sendVoteConfirmation({ to, pollTitle, myScores, permalink }) {
+export async function sendVoteConfirmation({ to, pollTitle, myScores, permalink, supplement = false }) {
   const subject = `Confirmation de votre vote : « ${pollTitle} »`;
+  const what = supplement ? 'Vos notes pour les nouveaux choix' : 'Votre vote';
   const fmt = (s) => (s > 0 ? '+' + s : String(s));
   const myLines = myScores.map((o) => `  • ${o.label || '(image)'} : ${fmt(o.score)}`).join('\n');
-  const text = `Bonjour,\n\nVotre vote pour « ${pollTitle} » a bien été enregistré. Merci !\n\n` +
-    `Votre vote :\n${myLines}\n\n` +
+  const text = `Bonjour,\n\n${what} pour « ${pollTitle} » ${supplement ? 'ont' : 'a'} bien été enregistré${supplement ? 'es' : ''}. Merci !\n\n` +
+    `${what} :\n${myLines}\n\n` +
     `Suivez les résultats à tout moment avec ce lien personnel (à conserver, ne le partagez pas) :\n${permalink}\n\n— Vote de valeur`;
   const myHtml = myScores.map((o) => `<li>${escapeHtml(o.label || '(image)')} : <strong>${fmt(o.score)}</strong></li>`).join('');
   const html = `<p>Bonjour,</p>
-<p>Votre vote pour <strong>« ${escapeHtml(pollTitle)} »</strong> a bien été enregistré. Merci !</p>
-<p><strong>Votre vote :</strong></p><ul>${myHtml}</ul>
+<p>${what} pour <strong>« ${escapeHtml(pollTitle)} »</strong> ${supplement ? 'ont' : 'a'} bien été enregistré${supplement ? 'es' : ''}. Merci !</p>
+<p><strong>${what} :</strong></p><ul>${myHtml}</ul>
 <p><a href="${permalink}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Suivre les résultats</a></p>
 <p style="color:#666;font-size:13px">Lien personnel à conserver, ne le partagez pas :<br>${permalink}</p>`;
 

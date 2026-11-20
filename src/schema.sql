@@ -157,3 +157,28 @@ BEGIN
       CHECK (min_ballots_for_results BETWEEN 0 AND 10000);
   END IF;
 END $$;
+
+-- === Nouveaux choix ajoutés après un vote (1.2) ===
+-- Options déjà notées par chaque votant : la liste des identifiants seulement,
+-- sans aucune note, pour lui proposer de noter les choix ajoutés après son vote.
+ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS rated_option_ids UUID[];
+-- Votes antérieurs : on considère que toutes les options actuelles ont été notées.
+UPDATE poll_voters pv
+   SET rated_option_ids = COALESCE((SELECT array_agg(o.id) FROM options o WHERE o.poll_id = pv.poll_id), '{}')
+ WHERE pv.voted_at IS NOT NULL AND pv.rated_option_ids IS NULL;
+
+-- Bulletin complémentaire : notes des seuls choix ajoutés après le vote. Il ne
+-- compte pas comme un bulletin de plus (nombre de votants inchangé).
+ALTER TABLE ballots ADD COLUMN IF NOT EXISTS is_supplement BOOLEAN NOT NULL DEFAULT false;
+
+-- Votants ayant demandé à être prévenus d'un nouveau choix : adresse chiffrée
+-- (clé du serveur), rattachée à l'inscription et jamais au bulletin, effacée à
+-- la clôture du scrutin. notified_option_ids évite de prévenir deux fois.
+CREATE TABLE IF NOT EXISTS voter_notifications (
+  voter_id            UUID PRIMARY KEY REFERENCES poll_voters(id) ON DELETE CASCADE,
+  poll_id             UUID NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  email_enc           TEXT NOT NULL,
+  notified_option_ids UUID[] NOT NULL DEFAULT '{}',
+  created_at          TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_voter_notifications_poll ON voter_notifications(poll_id);

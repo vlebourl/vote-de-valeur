@@ -66,7 +66,7 @@ export async function visibleResults(poll, viewer) {
 
 export async function listPolls(ownerId) {
   const { rows } = await query(
-    `SELECT p.*, (SELECT COUNT(*) FROM ballots b WHERE b.poll_id = p.id)::int AS ballots
+    `SELECT p.*, (SELECT COUNT(*) FROM ballots b WHERE b.poll_id = p.id AND NOT b.is_supplement)::int AS ballots
        FROM polls p
       WHERE p.owner_id = $1
       ORDER BY p.created_at DESC`,
@@ -154,28 +154,31 @@ export { computeResults };
 export async function listParticipants(poll) {
   if (!poll.is_nominative) throw conflict('Détail des participants disponible seulement pour un scrutin nominatif.');
   const { rows: voters } = await query(
-    `SELECT pv.email, pv.display_name, pv.voted_at, b.id AS ballot_id
+    `SELECT pv.id, pv.email, pv.display_name, pv.voted_at
        FROM poll_voters pv
-       LEFT JOIN ballots b ON b.voter_id = pv.id
       WHERE pv.poll_id = $1
       ORDER BY (pv.voted_at IS NULL), pv.display_name NULLS LAST, pv.email NULLS LAST, pv.created_at`,
     [poll.id]
   );
-  const ballotIds = voters.filter((v) => v.ballot_id).map((v) => v.ballot_id);
-  const scoresByBallot = {};
-  if (ballotIds.length) {
-    const { rows: scores } = await query(
-      'SELECT ballot_id, option_id, score FROM ballot_scores WHERE ballot_id = ANY($1)',
-      [ballotIds]
-    );
-    for (const r of scores) (scoresByBallot[r.ballot_id] ||= {})[r.option_id] = r.score;
-  }
+  // Notes des bulletins liés (bulletin principal et éventuels compléments).
+  const { rows: scores } = await query(
+    `SELECT b.voter_id, s.option_id, s.score
+       FROM ballots b JOIN ballot_scores s ON s.ballot_id = b.id
+      WHERE b.poll_id = $1 AND b.voter_id IS NOT NULL`,
+    [poll.id]
+  );
+  const { rows: linked } = await query(
+    'SELECT DISTINCT voter_id FROM ballots WHERE poll_id = $1 AND voter_id IS NOT NULL', [poll.id]
+  );
+  const hasBallot = new Set(linked.map((r) => r.voter_id));
+  const byVoter = {};
+  for (const r of scores) (byVoter[r.voter_id] ||= {})[r.option_id] = r.score;
   return voters.map((v) => ({
     email: v.email,
     name: v.display_name,
     voted: Boolean(v.voted_at),
-    anonymous: Boolean(v.voted_at) && !v.ballot_id, // a voté avant le passage en nominatif
-    scores: v.ballot_id ? (scoresByBallot[v.ballot_id] || {}) : null,
+    anonymous: Boolean(v.voted_at) && !hasBallot.has(v.id), // a voté avant le passage en nominatif
+    scores: hasBallot.has(v.id) ? (byVoter[v.id] || {}) : null,
   }));
 }
 
@@ -215,6 +218,10 @@ export async function updatePoll(poll, changes) {
     // Retour au vote secret : les personnes inscrites mais n'ayant pas encore
     // voté voteront en secret, leur identité en clair n'a plus lieu d'être.
     // (Les bulletins déjà déposés en nominatif restent liés, mais ne sont plus affichés.)
+    // Clôture : les adresses des votants qui voulaient être prévenus sont effacées.
+    if (changes.status === 'closed') {
+      await client.query('DELETE FROM voter_notifications WHERE poll_id = $1', [poll.id]);
+    }
     if (changes.isNominative === false) {
       await client.query(
         `UPDATE poll_voters SET email = NULL, display_name = NULL
