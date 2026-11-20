@@ -206,3 +206,70 @@ test('vote enregistré après la clôture refusé, abonnement non recréé', asy
   assert.equal((await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId])).rows[0].n, 0);
   assert.equal((await query('SELECT COUNT(*)::int AS n FROM voter_notifications WHERE poll_id = $1', [pollId])).rows[0].n, 0);
 });
+
+test('votant d\'avant la 1.2 : ses choix d\'origine ne redeviennent jamais notables', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const path = await requestBallot(app, pollId, `${unique('legacy')}@test.local`);
+  await submitBallot(app, path, { Lyon: 1 });
+  // Simule un vote antérieur à la migration : liste inconnue, options d'origine non datées.
+  await query('UPDATE poll_voters SET rated_option_ids = NULL, rated_before_v12 = true WHERE poll_id = $1', [pollId]);
+  await query('UPDATE options SET created_at = NULL WHERE poll_id = $1', [pollId]);
+  await addOption(agent, pollId, 'Rennes');
+  const first = await request(app).get(path).expect(200);
+  assert.deepEqual([...first.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Rennes']);
+  await submitBallot(app, path, { Rennes: 1 });
+  // Après ce premier complément, rien d'autre (surtout pas Lyon, Marseille, Bordeaux).
+  assert.match((await request(app).get(path).expect(302)).headers.location, /\/results\//);
+  const { rows } = await query(
+    `SELECT o.label, COUNT(s.score)::int AS n FROM options o LEFT JOIN ballot_scores s ON s.option_id = o.id
+      WHERE o.poll_id = $1 GROUP BY o.label`, [pollId]);
+  for (const r of rows) assert.equal(r.n, 1, `${r.label} noté une seule fois`);
+});
+
+test('choix en attente affichés dans l\'ordre du scrutin, jamais selon leurs notes', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent, { min_ballots: '2' });
+  const paths = [];
+  for (const n of [1, 2]) {
+    const p = await requestBallot(app, pollId, `${unique('ordre' + n)}@test.local`);
+    await submitBallot(app, p, { Lyon: 1 });
+    paths.push(p);
+  }
+  await addOption(agent, pollId, 'Xertigny');
+  await addOption(agent, pollId, 'Yvetot');
+  await submitBallot(app, paths[0], { Xertigny: -2, Yvetot: 2 });
+  const r = await request(app).get(`/api/polls/${pollId}/results?token=${tokenOf(paths[0])}`).expect(200);
+  const pendingLabels = r.body.options.filter((o) => o.pending).map((o) => o.label);
+  assert.deepEqual(pendingLabels, ['Xertigny', 'Yvetot']);
+});
+
+test('note vide refusée (pas prise pour un 0)', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const path = await requestBallot(app, pollId, `${unique('vide')}@test.local`);
+  const page = await request(app).get(path).expect(200);
+  const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
+  const form = { ...hiddenFields(page.text), ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
+  form[`score_${ids[0]}`] = '';
+  await request(app).post(path).type('form').send(form).expect(400);
+  form[`score_${ids[0]}`] = '3';
+  await request(app).post(path).type('form').send(form).expect(400);
+  assert.equal((await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId])).rows[0].n, 0);
+});
+
+test('avis : un échec d\'envoi laisse la personne à prévenir et le compte', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const email = `${unique('echec')}@test.local`;
+  await submitBallot(app, await requestBallot(app, pollId, email), { Lyon: 1 }, { notify: 'on' });
+  await addOption(agent, pollId, 'Agen');
+  const { devFailures } = await import('../src/mailer.js');
+  devFailures.next = 1;
+  const res = await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);
+  assert.match(decodeURIComponent(res.headers.location), /1 échec/);
+  const { pendingCount } = await import('../src/services/followups.js');
+  assert.equal(await pendingCount({ id: pollId }), 1);
+  await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);
+  assert.equal(await pendingCount({ id: pollId }), 0);
+});

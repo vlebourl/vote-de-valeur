@@ -164,7 +164,7 @@ export function openapi(baseUrl) {
           description: 'Envoie un avis aux votants qui ont coché « Prévenez-moi si un choix est ajouté » et qui ont au moins un choix ajouté depuis leur vote, pas encore signalé. Chacun reçoit un nouveau lien personnel (il remplace le précédent) pour noter ces choix ; ses autres notes restent inchangées. La réponse ne contient que des nombres, jamais d’adresse. Corps : objet JSON vide.',
           requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false } } } },
           responses: {
-            200: json({ type: 'object', properties: { eligible: { type: 'integer' }, sent: { type: 'integer' }, failed: { type: 'integer' } } }, 'Avis envoyés.'),
+            200: json({ type: 'object', properties: { eligible: { type: 'integer' }, sent: { type: 'integer' }, failed: { type: 'integer' }, remaining: { type: 'integer', description: 'Votants encore à prévenir (quota atteint, échec d’envoi) : relancer plus tard.' } } }, 'Avis envoyés.'),
             409: error('Vote clôturé.'), ...writes, ...forPoll,
           },
         },

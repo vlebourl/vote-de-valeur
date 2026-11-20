@@ -68,7 +68,10 @@ export async function visibleResults(poll, viewer) {
   if (!visible) return { visible, ballotCount, threshold, options: [] };
   if (viewer === 'owner' && poll.is_nominative) return { visible, ballotCount, threshold, options };
   const shown = rankOptions(options.filter((o) => o.votes_count >= threshold));
+  // Choix en attente triés par leur position, jamais par leur total (l'ordre
+  // révélerait les préférences de leurs quelques votants).
   const waiting = options.filter((o) => o.votes_count < threshold)
+    .sort((a, b) => a.position - b.position)
     .map((o) => ({ ...o, total: null, rank: null, pending: true }));
   return { visible, ballotCount, threshold, options: [...shown, ...waiting] };
 }
@@ -222,6 +225,10 @@ export async function updatePoll(poll, changes) {
 
   values.push(poll.id);
   return tx(async (client) => {
+    // État d'avant la modification, relu sous verrou (pas celui lu par l'appelant).
+    const { rows: before } = await client.query('SELECT status, close_at FROM polls WHERE id = $1 FOR UPDATE', [poll.id]);
+    if (!before[0]) throw notFound();
+    const wasClosed = isClosed(before[0]);
     const { rows } = await client.query(`UPDATE polls SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING *`, values);
     if (!rows[0]) throw notFound();
     // Retour au vote secret : les personnes inscrites mais n'ayant pas encore
@@ -230,7 +237,7 @@ export async function updatePoll(poll, changes) {
     // Clôture : les adresses des votants qui voulaient être prévenus sont effacées.
     // Idem si l'on rouvre ou prolonge un scrutin déjà clos (la purge horaire
     // n'est peut-être pas encore passée).
-    if (changes.status === 'closed' || isClosed(poll)) {
+    if (changes.status === 'closed' || wasClosed) {
       await client.query('DELETE FROM voter_notifications WHERE poll_id = $1', [poll.id]);
     }
     if (changes.isNominative === false) {
@@ -254,7 +261,8 @@ export async function addOption(poll, option) {
   if (!o.label && !o.image) throw invalid('Une option doit avoir au moins un intitulé ou une image.');
   return tx(async (client) => {
     // Verrou sur le scrutin : positions et nombre d'options cohérents en cas d'ajouts simultanés.
-    await client.query('SELECT id FROM polls WHERE id = $1 FOR UPDATE', [poll.id]);
+    const { rows: exists } = await client.query('SELECT id FROM polls WHERE id = $1 FOR UPDATE', [poll.id]);
+    if (!exists[0]) throw notFound();
     const { rows: stats } = await client.query(
       'SELECT COUNT(*)::int AS n, COALESCE(MAX(position), -1) + 1 AS next FROM options WHERE poll_id = $1',
       [poll.id]

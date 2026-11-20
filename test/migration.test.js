@@ -56,6 +56,7 @@ test('migration d\'une base existante', async () => {
   assert.equal(voter.email, null);
   assert.equal(voter.voted_at.toISOString().slice(11), '00:00:00.000Z');
   assert.equal(voter.rated_option_ids, null, 'vote antérieur : options notées inconnues');
+  assert.equal(voter.rated_before_v12, true, 'vote antérieur marqué durablement');
   // Seules les options créées après la migration seront proposées à ces votants.
   const opt = (await client.query('SELECT created_at FROM options WHERE id = $1', [legacyOption.id])).rows[0];
   assert.equal(opt.created_at, null);

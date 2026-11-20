@@ -45,7 +45,7 @@
   <% } %>
   <div class="final-warning">
     <p style="margin:0 0 8px"><strong><%= sup ? 'Ces notes sont définitives.' : 'Votre vote est définitif.' %></strong>
-      Vous ne pourrez <strong>ni <%= sup ? 'les' : 'le' %> modifier, ni <%= sup ? 'les' : 'le' %> revoir</strong> après validation : pour préserver le secret du vote, vos notes ne sont conservées nulle part avec votre identité, et ne figurent pas dans l'email de confirmation.</p>
+      Vous ne pourrez <strong>ni <%= sup ? 'les' : 'le' %> modifier, ni <%= sup ? 'les' : 'le' %> revoir</strong> après validation<% if (poll.is_nominative) { %> : l'organisateur verra vos notes (scrutin nominatif), mais elles ne vous seront plus montrées, ni sur le site ni dans l'email de confirmation.<% } else { %> : pour préserver le secret du vote, vos notes ne sont pas rattachées à votre inscription et ne figurent pas dans l'email de confirmation.<% } %></p>
     <div class="checkbox-row">
       <input type="checkbox" id="final_ack" name="final_ack" required>
       <label for="final_ack">J'ai vérifié mes notes et compris que je ne pourrai ni les modifier ni les revoir.</label>

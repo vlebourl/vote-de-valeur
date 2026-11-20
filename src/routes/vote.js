@@ -155,7 +155,7 @@ async function allOptions(pollId) {
 
 // Choix à présenter à ce votant : tous (premier vote) ou les seuls nouveaux.
 async function ballotOptions(poll, voter) {
-  return voter.voted_at ? missingOptions(poll.id, voter.rated_option_ids) : allOptions(poll.id);
+  return voter.voted_at ? missingOptions(poll.id, voter) : allOptions(poll.id);
 }
 
 function renderBallot(res, poll, voter, token, options, extra = {}) {
@@ -183,7 +183,7 @@ router.get('/vote/:id/ballot/:token', async (req, res) => {
   if (!voter) return res.status(404).render('error', { message: 'Lien de vote invalide ou remplacé par un lien plus récent.' });
 
   if (voter.voted_at) {
-    const missing = isClosed(poll) ? [] : await missingOptions(poll.id, voter.rated_option_ids);
+    const missing = isClosed(poll) ? [] : await missingOptions(poll.id, voter);
     if (!missing.length) return res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
     return renderBallot(res, poll, voter, req.params.token, missing);
   }
@@ -243,12 +243,16 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
 
     // Verrou sur le votant : deux soumissions simultanées ne créent qu'un bulletin.
     const { rows: locked } = await client.query(
-      'SELECT voted_at, rated_option_ids FROM poll_voters WHERE id = $1 FOR UPDATE', [voter.id]
+      'SELECT voted_at, rated_option_ids, rated_before_v12, token_hash FROM poll_voters WHERE id = $1 FOR UPDATE', [voter.id]
     );
     if (!locked[0]) return 'gone';
+    // Revérifiés après l'attente du verrou : lien toujours valable (un avis a pu
+    // le remplacer) et échéance pas encore passée.
+    if (locked[0].token_hash !== hashToken(token)) return 'token_replaced';
+    if (isClosed(current[0])) return 'closed';
     const supplement = Boolean(locked[0].voted_at);
     const stillMissing = supplement
-      ? new Set((await missingOptions(poll.id, locked[0].rated_option_ids, client)).map((o) => o.id))
+      ? new Set((await missingOptions(poll.id, locked[0], client)).map((o) => o.id))
       : null;
     // Options chargées après les verrous : choix présentés encore existants et,
     // pour un complément, encore à noter.
@@ -259,9 +263,10 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
 
     const scores = [];
     for (const opt of targets) {
-      const score = Number(req.body[`score_${opt.id}`]);
-      if (!Number.isInteger(score) || score < -2 || score > 2) return 'incomplete';
-      scores.push([opt.id, score]);
+      // Une seule valeur, exactement -2, -1, 0, 1 ou 2 (un champ vide n'est pas un 0).
+      const raw = req.body[`score_${opt.id}`];
+      if (typeof raw !== 'string' || !/^(-2|-1|0|1|2)$/.test(raw)) return 'incomplete';
+      scores.push([opt.id, Number(raw)]);
     }
 
     // Scrutin secret : bulletin sans lien vers le votant ni horodatage, et date
@@ -292,6 +297,9 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   });
 
   if (outcome === 'gone') return res.status(404).render('error', { message: 'Vote introuvable.' });
+  if (outcome === 'token_replaced') {
+    return res.status(409).render('error', { message: 'Ce lien vient d\'être remplacé par un lien plus récent, envoyé par email : votre bulletin n\'a pas été enregistré. Utilisez le nouveau lien.' });
+  }
   if (outcome === 'closed') return res.render('vote_closed', { poll, voted: false });
   if (outcome === 'already_voted') return res.redirect(`/vote/${poll.id}/results/${token}`);
   if (outcome === 'mode_changed') {
@@ -337,7 +345,7 @@ router.get('/vote/:id/results/:token', async (req, res) => {
   }
 
   const { options, ballotCount, visible, threshold } = await visibleResults(poll, 'voter');
-  const newOptions = isClosed(poll) ? [] : await missingOptions(poll.id, voter.rated_option_ids);
+  const newOptions = isClosed(poll) ? [] : await missingOptions(poll.id, voter);
   res.render('results', {
     poll, options, ballotCount, visible, threshold, token: req.params.token, closed: isClosed(poll),
     newOptions,
@@ -352,6 +360,7 @@ router.get('/api/polls/:id/results', async (req, res) => {
   const voter = await getVoterByToken(req.params.id, String(req.query.token || ''));
   if (!voter || !voter.voted_at) return res.status(403).json({ error: 'forbidden' });
   const poll = await getPoll(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'not_found' });
   const { options, ballotCount, visible, threshold } = await visibleResults(poll, 'voter');
   res.json({ options, ballotCount, hidden: !visible, threshold });
 });

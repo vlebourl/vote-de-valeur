@@ -34,17 +34,19 @@ export function openEmail(sealed) {
 }
 
 // Options du scrutin que ce votant n'a pas encore notées (dans l'ordre du scrutin).
-// rated = NULL : vote antérieur à la version 1.2, dont on ignore les options
-// notées ; seules les options créées depuis (created_at renseigné) sont proposées.
+// voter : { rated_option_ids, rated_before_v12 }. Un votant d'avant la version
+// 1.2 ne peut noter que les options créées depuis (created_at renseigné) : on
+// ignore lesquelles il avait notées, toutes celles d'origine restent donc closes.
 const MISSING_SQL = `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
    FROM options
   WHERE poll_id = $1
     AND NOT (id = ANY(COALESCE($2::uuid[], '{}')))
-    AND ($2::uuid[] IS NOT NULL OR created_at IS NOT NULL)
+    AND (NOT $3::boolean OR created_at IS NOT NULL)
   ORDER BY position`;
 
-export async function missingOptions(pollId, ratedIds, client = { query }) {
-  const { rows } = await client.query(MISSING_SQL, [pollId, ratedIds ?? null]);
+export async function missingOptions(pollId, voter, client = { query }) {
+  if (!voter.rated_option_ids && !voter.rated_before_v12) return []; // n'a pas voté
+  const { rows } = await client.query(MISSING_SQL, [pollId, voter.rated_option_ids ?? null, Boolean(voter.rated_before_v12)]);
   return rows;
 }
 
@@ -64,22 +66,21 @@ export async function subscribe(client, poll, voterId, email) {
   );
 }
 
-// Votants abonnés à prévenir : ceux qui ont des choix non notés dont ils n'ont
-// pas encore été avertis.
+// Votants abonnés à prévenir : ceux qui ont au moins un choix non noté dont ils
+// n'ont pas encore été avertis (une seule requête).
+const PENDING_SQL = `SELECT vn.voter_id
+   FROM voter_notifications vn JOIN poll_voters pv ON pv.id = vn.voter_id
+  WHERE vn.poll_id = $1 AND pv.voted_at IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM options o
+       WHERE o.poll_id = vn.poll_id
+         AND NOT (o.id = ANY(COALESCE(pv.rated_option_ids, '{}')))
+         AND (NOT pv.rated_before_v12 OR o.created_at IS NOT NULL)
+         AND NOT (o.id = ANY(vn.notified_option_ids)))
+  ORDER BY vn.voter_id`;
+
 async function pending(poll) {
-  const { rows } = await query(
-    `SELECT vn.voter_id, vn.notified_option_ids, pv.rated_option_ids
-       FROM voter_notifications vn JOIN poll_voters pv ON pv.id = vn.voter_id
-      WHERE vn.poll_id = $1 AND pv.voted_at IS NOT NULL`,
-    [poll.id]
-  );
-  const out = [];
-  for (const r of rows) {
-    const missing = await missingOptions(poll.id, r.rated_option_ids);
-    const notified = new Set(r.notified_option_ids);
-    if (missing.some((o) => !notified.has(o.id))) out.push(r.voter_id);
-  }
-  return out;
+  return (await query(PENDING_SQL, [poll.id])).rows.map((r) => r.voter_id);
 }
 
 export async function pendingCount(poll) {
@@ -93,34 +94,35 @@ export async function subscriberCount(poll) {
 
 // Prévient les abonnés concernés : nouveau lien personnel (il remplace le
 // précédent, y compris le lien des résultats) et liste des nouveaux choix.
-// Pour chaque votant, tout est revérifié sous verrou (scrutin ouvert, choix
-// encore à noter, pas déjà signalés) : deux envois simultanés ne prévoient
-// pas deux fois la même personne. Le remplacement du lien n'est validé que si
-// l'email part. take(n) réserve n emails sur le quota (false : quota atteint).
+// Pour chaque votant, tout est revérifié sous verrou (scrutin ouvert à cet
+// instant, choix encore à noter et pas déjà signalés) ; le quota n'est réservé
+// qu'ensuite, pour un envoi réel. Le remplacement du lien n'est validé que si
+// l'email part. take(n) réserve n emails (false : quota atteint).
 // Renvoie des nombres seulement : { eligible, sent, failed, remaining }.
 export async function notifySubscribers(poll, { take = () => true } = {}) {
   const candidates = await pending(poll);
   let sent = 0;
   let failed = 0;
-  let stopped = false;
   for (const voterId of candidates) {
-    if (!take(1)) { stopped = true; break; }
     const token = newToken();
+    let done;
     try {
-      const done = await tx(async (client) => {
+      done = await tx(async (client) => {
         const { rows: p } = await client.query('SELECT status, close_at, title FROM polls WHERE id = $1 FOR SHARE', [poll.id]);
         if (!p[0] || isClosed(p[0])) return 'closed';
         const { rows: v } = await client.query(
-          `SELECT pv.rated_option_ids, vn.email_enc, vn.notified_option_ids
+          `SELECT pv.rated_option_ids, pv.rated_before_v12, vn.email_enc, vn.notified_option_ids
              FROM poll_voters pv JOIN voter_notifications vn ON vn.voter_id = pv.id
             WHERE pv.id = $1 FOR UPDATE OF pv, vn`,
           [voterId]
         );
+        if (isClosed(p[0])) return 'closed'; // échéance passée pendant l'attente du verrou
         if (!v[0]) return 'skip';
-        const missing = await missingOptions(poll.id, v[0].rated_option_ids, client);
+        const missing = await missingOptions(poll.id, v[0], client);
         const notified = new Set(v[0].notified_option_ids);
         const fresh = missing.filter((o) => !notified.has(o.id));
         if (!fresh.length) return 'skip';
+        if (!take(1)) return 'quota';
         const email = openEmail(v[0].email_enc);
         if (!email) throw new Error('adresse illisible');
         await client.query('UPDATE poll_voters SET token_hash = $1 WHERE id = $2', [hashToken(token), voterId]);
@@ -136,15 +138,15 @@ export async function notifySubscribers(poll, { take = () => true } = {}) {
         });
         return 'sent';
       });
-      if (done === 'closed') { stopped = true; break; }
-      if (done === 'sent') sent += 1;
     } catch (err) {
       console.error('Avis de nouveau choix non envoyé :', err.code || err.name, err.responseCode || '');
       failed += 1;
+      continue;
     }
+    if (done === 'sent') sent += 1;
+    if (done === 'closed' || done === 'quota') break;
   }
-  const remaining = stopped ? await pendingCount(poll) : 0;
-  return { eligible: candidates.length, sent, failed, remaining };
+  return { eligible: candidates.length, sent, failed, remaining: await pendingCount(poll) };
 }
 
 // Effacement des adresses des scrutins clos (statut ou date de clôture passée).

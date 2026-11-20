@@ -167,6 +167,11 @@ ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS rated_option_ids UUID[];
 -- règle sûre faute d'historique.
 ALTER TABLE options ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 ALTER TABLE options ALTER COLUMN created_at SET DEFAULT now();
+-- Marque permanente de ces votants (la liste rated_option_ids ne suffit pas :
+-- elle cesse d'être NULL dès leur premier complément).
+ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS rated_before_v12 BOOLEAN NOT NULL DEFAULT false;
+UPDATE poll_voters SET rated_before_v12 = true
+ WHERE voted_at IS NOT NULL AND rated_option_ids IS NULL AND NOT rated_before_v12;
 
 -- Bulletin complémentaire : notes des seuls choix ajoutés après le vote. Il ne
 -- compte pas comme un bulletin de plus (nombre de votants inchangé).
