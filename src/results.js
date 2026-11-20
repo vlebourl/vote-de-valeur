@@ -10,7 +10,7 @@ export async function computeResults(pollId) {
     `SELECT o.id, o.label, o.description, o.position,
             (o.image_data IS NOT NULL) AS has_image,
             COALESCE(SUM(s.score), 0)::int AS total,
-            COUNT(s.score)                 AS votes_count
+            COUNT(s.score)::int            AS votes_count
        FROM options o
        LEFT JOIN ballot_scores s ON s.option_id = o.id
       WHERE o.poll_id = $1
@@ -25,18 +25,20 @@ export async function computeResults(pollId) {
   );
   const ballotCount = ballotRows[0].n;
 
-  // Attribution des rangs avec gestion des égalités (rang standard "1224").
+  return { options: rankOptions(rows), ballotCount };
+}
+
+// Attribue les rangs à des options déjà triées par total décroissant, avec
+// gestion des égalités (classement standard « 1224 » : deux ex æquo partagent
+// le même rang, le suivant prend le rang correspondant à sa position).
+export function rankOptions(sorted) {
   let rank = 0;
   let prevTotal = null;
-  let seen = 0;
-  const ranked = rows.map((r) => {
-    seen += 1;
-    if (r.total !== prevTotal) {
-      rank = seen;
-      prevTotal = r.total;
+  return sorted.map((option, index) => {
+    if (option.total !== prevTotal) {
+      rank = index + 1;
+      prevTotal = option.total;
     }
-    return { ...r, rank };
+    return { ...option, rank };
   });
-
-  return { options: ranked, ballotCount };
 }

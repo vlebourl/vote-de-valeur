@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import { config } from './config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret';
-const EMAIL_HASH_SECRET = process.env.EMAIL_HASH_SECRET || 'dev-insecure-email-secret';
+const JWT_SECRET = config.jwtSecret;
+const EMAIL_HASH_SECRET = config.emailHashSecret;
 const COOKIE_NAME = 'vv_session';
 
 export async function hashPassword(plain) {
@@ -23,13 +24,13 @@ export function setSessionCookie(res, token) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: config.isProduction,
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 }
 
 export function clearSessionCookie(res) {
-  res.clearCookie(COOKIE_NAME);
+  res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: config.isProduction });
 }
 
 // Middleware : attache req.user si un cookie de session valide est présent.
@@ -53,7 +54,8 @@ export function requireAuth(req, res, next) {
   next();
 }
 
-// Normalise puis hash l'email (HMAC) — unicité sans stockage en clair.
+// Normalise puis hache l'identifiant du votant (email, ou nom en mode « nom »)
+// par HMAC : garantit l'unicité du vote sans le stocker en clair.
 export function hashEmail(email) {
   const normalized = String(email).trim().toLowerCase();
   return crypto.createHmac('sha256', EMAIL_HASH_SECRET).update(normalized).digest('hex');

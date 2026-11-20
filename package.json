@@ -8,22 +8,32 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node src/migrate.js",
+    "test": "node scripts/test.js",
+    "lint": "eslint .",
     "up": "docker compose up --build",
-    "deploy": "bash deploy/deploy.sh"
+    "deploy": "bash deploy/deploy.sh",
+    "init-env": "node scripts/init-env.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
-    "express": "^4.21.2",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.5",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1",
-    "nanoid": "^5.0.9",
-    "nodemailer": "^6.9.16",
-    "pg": "^8.13.1"
+    "multer": "^2.5.0",
+    "nodemailer": "^10.6.1",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "embedded-postgres": "^18.7.0-beta.19",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "supertest": "^7.3.2"
   }
 }

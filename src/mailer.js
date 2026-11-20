@@ -17,16 +17,25 @@ if (!DEV_MODE) {
 
 const FROM = process.env.SMTP_FROM || 'Vote de valeur <noreply@example.com>';
 
+// En mode développement, les emails ne partent pas : ils sont affichés dans la
+// console et gardés ici (les 50 derniers), ce qui sert aussi aux tests.
+export const devOutbox = [];
+function keepInOutbox(message) {
+  devOutbox.push(message);
+  if (devOutbox.length > 50) devOutbox.shift();
+}
+
 export async function sendMagicLink({ to, pollTitle, url }) {
   const subject = `Votez : « ${pollTitle} »`;
-  const text = `Bonjour,\n\nVous avez demandé à participer au vote « ${pollTitle} ».\nCliquez sur ce lien personnel et unique pour accéder au bulletin :\n\n${url}\n\nCe lien ne fonctionne qu'une fois et vous identifie comme votant. Ne le partagez pas.\n\n— Vote de valeur`;
+  const text = `Bonjour,\n\nVous avez demandé à participer au vote « ${pollTitle} ».\nCliquez sur ce lien personnel pour accéder au bulletin :\n\n${url}\n\nCe lien vous identifie comme votant : ne le partagez pas. Une nouvelle demande remplace ce lien par un nouveau.\n\n— Vote de valeur`;
   const html = `<p>Bonjour,</p>
 <p>Vous avez demandé à participer au vote <strong>« ${escapeHtml(pollTitle)} »</strong>.</p>
 <p><a href="${url}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Accéder au bulletin</a></p>
-<p style="color:#666;font-size:13px">Ce lien personnel et unique ne fonctionne qu'une fois. Ne le partagez pas.</p>
+<p style="color:#666;font-size:13px">Ce lien vous identifie comme votant : ne le partagez pas. Une nouvelle demande le remplace par un nouveau.</p>
 <p style="color:#666;font-size:13px">Ou copiez ce lien : ${url}</p>`;
 
   if (DEV_MODE) {
+    keepInOutbox({ kind: 'magic-link', to, url });
     console.log('\n📧 [SMTP_DEV_MODE] Email non envoyé. Lien magique :');
     console.log(`   → ${to} : ${url}\n`);
     return { devMode: true };
@@ -55,6 +64,7 @@ export async function sendVoteConfirmation({ to, pollTitle, myScores, results, p
 <p style="color:#666;font-size:13px">Ce lien reste valable et affiche les résultats en temps réel :<br>${permalink}</p>`;
 
   if (DEV_MODE) {
+    keepInOutbox({ kind: 'confirmation', to, permalink, myScores });
     console.log('\n📧 [SMTP_DEV_MODE] Confirmation de vote non envoyée :');
     console.log(`   → ${to} : ${permalink}\n`);
     return { devMode: true };

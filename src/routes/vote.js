@@ -1,17 +1,30 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { nanoid } from 'nanoid';
 import { query, tx } from '../db.js';
+import { config } from '../config.js';
 import { hashEmail, verifyPassword } from '../auth.js';
+import { newToken, hashToken, sealWithToken, openWithToken } from '../tokens.js';
+import { requireUuidParam } from '../security.js';
 import { sendMagicLink, sendVoteConfirmation } from '../mailer.js';
 import { computeResults } from '../results.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret';
-const BASE_URL = () => (process.env.BASE_URL || '').replace(/\/$/, '');
+router.param('id', requireUuidParam);
+
+const ballotUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/ballot/${token}`;
+const resultsUrl = (pollId, token) => `${config.baseUrl}/vote/${pollId}/results/${token}`;
 
 async function getPoll(id) {
   const { rows } = await query('SELECT * FROM polls WHERE id = $1', [id]);
+  return rows[0] || null;
+}
+
+// Votant correspondant au jeton d'un lien (la base ne connaît que son empreinte).
+async function getVoterByToken(pollId, token) {
+  const { rows } = await query(
+    'SELECT * FROM poll_voters WHERE poll_id = $1 AND token_hash = $2',
+    [pollId, hashToken(token)]
+  );
   return rows[0] || null;
 }
 
@@ -25,14 +38,16 @@ function isClosed(poll) {
 // Cookie prouvant l'accès à un vote privé
 function accessCookieName(id) { return `vv_access_${id.slice(0, 8)}`; }
 function grantAccess(res, poll) {
-  const token = jwt.sign({ poll: poll.id, a: 1 }, JWT_SECRET, { expiresIn: '2h' });
-  res.cookie(accessCookieName(poll.id), token, { httpOnly: true, sameSite: 'lax', maxAge: 2 * 3600 * 1000 });
+  const token = jwt.sign({ poll: poll.id, a: 1 }, config.jwtSecret, { expiresIn: '2h' });
+  res.cookie(accessCookieName(poll.id), token, {
+    httpOnly: true, sameSite: 'lax', secure: config.isProduction, maxAge: 2 * 3600 * 1000,
+  });
 }
 function hasAccess(req, poll) {
   if (!poll.is_private) return true;
   const raw = req.cookies?.[accessCookieName(poll.id)];
   if (!raw) return false;
-  try { return jwt.verify(raw, JWT_SECRET).poll === poll.id; } catch { return false; }
+  try { return jwt.verify(raw, config.jwtSecret).poll === poll.id; } catch { return false; }
 }
 
 // --- Page d'entrée d'un vote (par UUID) ---
@@ -57,6 +72,8 @@ router.post('/vote/:id/access', async (req, res) => {
 });
 
 // --- Demande du lien de vote par email ---
+// Chaque demande crée un nouveau jeton, qui remplace le précédent : la base
+// n'en garde que l'empreinte et ne peut donc pas renvoyer l'ancien.
 router.post('/vote/:id/request', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
@@ -65,39 +82,32 @@ router.post('/vote/:id/request', async (req, res) => {
   if (isClosed(poll)) return res.render('vote_email', { poll, closed: true, sent: false });
 
   const email = String(req.body.email || '').trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return res.status(400).render('vote_email', { poll, closed: false, sent: false, error: 'Email invalide.' });
   }
-  const emailHash = hashEmail(email);
   const name = String(req.body.name || '').trim().slice(0, 120);
+  const token = newToken();
 
-  // Récupère ou crée le votant, en réutilisant son jeton s'il existe déjà.
-  // En scrutin nominatif, on conserve l'email et le nom en clair (vote non secret) ;
-  // sinon on ne stocke que le hachage (secret du bulletin préservé).
-  let token;
-  const existing = await query(
-    'SELECT magic_token FROM poll_voters WHERE poll_id = $1 AND email_hash = $2',
-    [poll.id, emailHash]
+  // Scrutin nominatif : email et nom en clair (vote assumé non secret).
+  // Scrutin secret : l'email n'est stocké que chiffré avec le jeton du votant,
+  // le temps d'envoyer la confirmation de vote, puis effacé.
+  const clearEmail = poll.is_nominative ? email : null;
+  const displayName = poll.is_nominative ? (name || null) : null;
+  const sealedEmail = poll.is_nominative ? null : sealWithToken(token, email);
+
+  await query(
+    `INSERT INTO poll_voters (poll_id, email_hash, token_hash, email, email_sealed, display_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (poll_id, email_hash) DO UPDATE SET
+       token_hash   = EXCLUDED.token_hash,
+       email        = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.email ELSE poll_voters.email END,
+       email_sealed = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.email_sealed END,
+       display_name = CASE WHEN poll_voters.voted_at IS NULL THEN EXCLUDED.display_name ELSE poll_voters.display_name END`,
+    [poll.id, hashEmail(email), hashToken(token), clearEmail, sealedEmail, displayName]
   );
-  // On conserve l'email en clair pour pouvoir envoyer la confirmation de vote.
-  // Il n'est jamais relié au bulletin (le vote reste secret sauf scrutin nominatif).
-  if (existing.rows[0]) {
-    token = existing.rows[0].magic_token;
-    await query(
-      'UPDATE poll_voters SET email = $1, display_name = $2 WHERE poll_id = $3 AND email_hash = $4',
-      [email, poll.is_nominative ? (name || null) : null, poll.id, emailHash]
-    );
-  } else {
-    token = nanoid(32);
-    await query(
-      'INSERT INTO poll_voters (poll_id, email_hash, magic_token, email, display_name) VALUES ($1,$2,$3,$4,$5)',
-      [poll.id, emailHash, token, email, poll.is_nominative ? (name || null) : null]
-    );
-  }
 
-  const url = `${BASE_URL()}/vote/${poll.id}/ballot/${token}`;
   try {
-    await sendMagicLink({ to: email, pollTitle: poll.title, url });
+    await sendMagicLink({ to: email, pollTitle: poll.title, url: ballotUrl(poll.id, token) });
   } catch (err) {
     console.error('Envoi email échoué :', err);
     return res.status(500).render('vote_email', {
@@ -118,37 +128,26 @@ router.post('/vote/:id/name', async (req, res) => {
   if (poll.is_private && !hasAccess(req, poll)) return res.redirect(`/vote/${poll.id}`);
   if (isClosed(poll)) return res.render('vote_email', { poll, closed: true, sent: false });
 
-  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
   if (name.length < 2) {
     return res.status(400).render('vote_email', { poll, closed: false, sent: false, error: 'Entrez votre nom (2 caractères minimum).' });
   }
-  const nameHash = hashEmail(name.toLowerCase());
-  const alreadyVoted = () => res.status(409).render('vote_email', {
-    poll, closed: false, sent: false, error: `Le nom « ${name} » a déjà voté pour ce scrutin.`,
-  });
-
-  const existing = await query(
-    'SELECT magic_token, voted_at FROM poll_voters WHERE poll_id = $1 AND email_hash = $2',
-    [poll.id, nameHash]
+  const token = newToken();
+  // Le nom n'est gardé en clair qu'en scrutin nominatif ; sinon seul son HMAC
+  // sert à empêcher un second vote sous le même nom.
+  const { rows } = await query(
+    `INSERT INTO poll_voters (poll_id, email_hash, token_hash, display_name)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (poll_id, email_hash) DO UPDATE SET
+       token_hash = EXCLUDED.token_hash, display_name = EXCLUDED.display_name
+     WHERE poll_voters.voted_at IS NULL
+     RETURNING id`,
+    [poll.id, hashEmail(name.toLowerCase()), hashToken(token), poll.is_nominative ? name : null]
   );
-  let token;
-  if (existing.rows[0]) {
-    if (existing.rows[0].voted_at) return alreadyVoted();
-    token = existing.rows[0].magic_token;
-    await query('UPDATE poll_voters SET display_name = $1 WHERE poll_id = $2 AND email_hash = $3', [name, poll.id, nameHash]);
-  } else {
-    token = nanoid(32);
-    try {
-      await query(
-        'INSERT INTO poll_voters (poll_id, email_hash, magic_token, display_name) VALUES ($1,$2,$3,$4)',
-        [poll.id, nameHash, token, name]
-      );
-    } catch (e) {
-      if (e.code !== '23505') throw e; // course sur le même nom
-      const again = await query('SELECT magic_token, voted_at FROM poll_voters WHERE poll_id = $1 AND email_hash = $2', [poll.id, nameHash]);
-      if (again.rows[0]?.voted_at) return alreadyVoted();
-      token = again.rows[0].magic_token;
-    }
+  if (!rows[0]) {
+    return res.status(409).render('vote_email', {
+      poll, closed: false, sent: false, error: `Le nom « ${name} » a déjà voté pour ce scrutin.`,
+    });
   }
   return res.redirect(`/vote/${poll.id}/ballot/${token}`);
 });
@@ -158,19 +157,21 @@ router.get('/vote/:id/ballot/:token', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
 
-  const { rows } = await query(
-    'SELECT * FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-    [poll.id, req.params.token]
-  );
-  const voter = rows[0];
-  if (!voter) return res.status(404).render('error', { message: 'Lien de vote invalide ou expiré.' });
-
-  if (!voter.verified_at) {
-    await query('UPDATE poll_voters SET verified_at = now() WHERE id = $1', [voter.id]);
-  }
+  const voter = await getVoterByToken(poll.id, req.params.token);
+  if (!voter) return res.status(404).render('error', { message: 'Lien de vote invalide ou remplacé par un lien plus récent.' });
 
   // Déjà voté → on montre les résultats (vote définitif).
   if (voter.voted_at) return res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
+
+  if (!voter.verified_at) {
+    // Date seule en scrutin secret : un horodatage précis aiderait à relier
+    // le votant à son bulletin.
+    await query(
+      `UPDATE poll_voters SET verified_at = CASE WHEN $2 THEN now() ELSE date_trunc('day', now(), 'UTC') END
+        WHERE id = $1`,
+      [voter.id, poll.is_nominative]
+    );
+  }
 
   if (isClosed(poll)) {
     return res.render('vote_closed', { poll, voted: false });
@@ -189,21 +190,27 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
   if (isClosed(poll)) return res.render('vote_closed', { poll, voted: false });
 
-  const { rows } = await query(
-    'SELECT * FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-    [poll.id, req.params.token]
-  );
-  const voter = rows[0];
+  const token = req.params.token;
+  const voter = await getVoterByToken(poll.id, token);
   if (!voter) return res.status(404).render('error', { message: 'Lien de vote invalide.' });
-  if (voter.voted_at) return res.redirect(`/vote/${poll.id}/results/${req.params.token}`);
+  if (voter.voted_at) return res.redirect(`/vote/${poll.id}/results/${token}`);
 
   const { rows: options } = await query('SELECT id, label FROM options WHERE poll_id = $1 ORDER BY position', [poll.id]);
 
   const myScores = [];
-  await tx(async (client) => {
+  const recorded = await tx(async (client) => {
+    // Verrou sur le votant : deux soumissions simultanées ne créent qu'un bulletin.
+    const { rows: locked } = await client.query(
+      'SELECT voted_at FROM poll_voters WHERE id = $1 FOR UPDATE', [voter.id]
+    );
+    if (!locked[0] || locked[0].voted_at) return false;
+
+    // Scrutin secret : bulletin sans lien vers le votant ni horodatage, et date
+    // de vote arrondie au jour, pour qu'on ne puisse pas les rapprocher.
     const b = await client.query(
-      'INSERT INTO ballots (poll_id, voter_id) VALUES ($1,$2) RETURNING id',
-      [poll.id, poll.is_nominative ? voter.id : null]
+      `INSERT INTO ballots (poll_id, voter_id, created_at)
+       VALUES ($1, $2, CASE WHEN $3 THEN now() END) RETURNING id`,
+      [poll.id, poll.is_nominative ? voter.id : null, poll.is_nominative]
     );
     const ballotId = b.rows[0].id;
     for (const opt of options) {
@@ -215,26 +222,36 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
         [ballotId, opt.id, score]
       );
     }
-    await client.query('UPDATE poll_voters SET voted_at = now() WHERE id = $1', [voter.id]);
+    await client.query(
+      `UPDATE poll_voters
+          SET voted_at = CASE WHEN $2 THEN now() ELSE date_trunc('day', now(), 'UTC') END,
+              email_sealed = NULL
+        WHERE id = $1`,
+      [voter.id, poll.is_nominative]
+    );
+    return true;
   });
+  if (!recorded) return res.redirect(`/vote/${poll.id}/results/${token}`);
 
-  // Confirmation par email (best-effort : ne bloque jamais le vote).
-  if (voter.email) {
+  // Confirmation par email (best-effort : ne bloque jamais le vote). En scrutin
+  // secret, l'adresse n'est lisible qu'avec le jeton présenté maintenant.
+  const recipient = voter.email || openWithToken(token, voter.email_sealed);
+  if (recipient) {
     try {
       const { options: results } = await computeResults(poll.id);
       await sendVoteConfirmation({
-        to: voter.email,
+        to: recipient,
         pollTitle: poll.title,
         myScores,
         results: results.map((o) => ({ label: o.label, total: o.total, rank: o.rank })),
-        permalink: `${BASE_URL()}/vote/${poll.id}/results/${req.params.token}`,
+        permalink: resultsUrl(poll.id, token),
       });
     } catch (err) {
       console.error('Confirmation de vote non envoyée :', err);
     }
   }
 
-  res.redirect(`/vote/${poll.id}/results/${req.params.token}?v=1`);
+  res.redirect(`/vote/${poll.id}/results/${token}?v=1`);
 });
 
 // --- Résultats sans jeton : réservés aux votants → on renvoie à la page du vote ---
@@ -249,12 +266,9 @@ router.get('/vote/:id/results/:token', async (req, res) => {
   const poll = await getPoll(req.params.id);
   if (!poll) return res.status(404).render('error', { message: 'Vote introuvable.' });
 
-  const { rows } = await query(
-    'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-    [poll.id, req.params.token]
-  );
-  if (!rows[0]) return res.status(404).render('error', { message: 'Lien invalide.' });
-  if (!rows[0].voted_at) {
+  const voter = await getVoterByToken(poll.id, req.params.token);
+  if (!voter) return res.status(404).render('error', { message: 'Lien invalide.' });
+  if (!voter.voted_at) {
     // N'a pas encore voté : on l'envoie au bulletin.
     return res.redirect(`/vote/${poll.id}/ballot/${req.params.token}`);
   }
@@ -263,18 +277,14 @@ router.get('/vote/:id/results/:token', async (req, res) => {
   res.render('results', {
     poll, options, ballotCount, token: req.params.token, closed: isClosed(poll),
     justVoted: req.query.v === '1',
-    permalink: `${BASE_URL()}/vote/${poll.id}/results/${req.params.token}`,
+    permalink: resultsUrl(poll.id, req.params.token),
   });
 });
 
 // --- Résultats JSON pour la mise à jour en temps réel (réservé au votant) ---
 router.get('/api/polls/:id/results', async (req, res) => {
-  const token = String(req.query.token || '');
-  const { rows } = await query(
-    'SELECT voted_at FROM poll_voters WHERE poll_id = $1 AND magic_token = $2',
-    [req.params.id, token]
-  );
-  if (!rows[0] || !rows[0].voted_at) return res.status(403).json({ error: 'forbidden' });
+  const voter = await getVoterByToken(req.params.id, String(req.query.token || ''));
+  if (!voter || !voter.voted_at) return res.status(403).json({ error: 'forbidden' });
   const { options, ballotCount } = await computeResults(req.params.id);
   res.json({ options, ballotCount });
 });

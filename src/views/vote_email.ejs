@@ -8,7 +8,7 @@
 <% } else if (typeof sent !== 'undefined' && sent) { %>
   <div class="card">
     <div class="notice">Un lien de vote personnel vient d'être envoyé par email.</div>
-    <p>Ouvrez votre boîte mail et cliquez sur le lien pour accéder au bulletin. Le lien est unique et ne fonctionne que pour vous.</p>
+    <p>Ouvrez votre boîte mail et cliquez sur le lien pour accéder au bulletin. Ce lien est personnel ; une nouvelle demande le remplace par un nouveau.</p>
     <p class="field-hint">Vous ne recevez rien ? Vérifiez vos spams, ou <a href="/vote/<%= poll.id %>">réessayez</a>.</p>
   </div>
 
@@ -50,7 +50,7 @@
     <% if (poll.is_nominative) { %>
       <p class="field-hint">Scrutin nominatif : votre email et votre nom identifient votre bulletin auprès de l'organisateur.</p>
     <% } else { %>
-      <p class="field-hint">Votre email garantit l'unicité du vote et sert à vous envoyer votre confirmation. Il n'est jamais associé à votre bulletin (vote secret).</p>
+      <p class="field-hint">Votre email garantit l'unicité du vote et sert à vous envoyer votre confirmation : il n'est conservé que chiffré jusqu'à votre vote, puis effacé, et n'est jamais associé à votre bulletin (vote secret).</p>
     <% } %>
   </div>
 <% } %>

@@ -40,7 +40,7 @@
     const el = document.getElementById(o.containerId);
     if (!el) return;
     async function refresh() {
-      try { const r = await fetch(o.url); if (!r.ok) return; window.vvRenderResults(el, await r.json()); } catch (e) { /* silencieux */ }
+      try { const r = await fetch(o.url); if (!r.ok) return; window.vvRenderResults(el, await r.json()); } catch { /* silencieux */ }
     }
     setInterval(refresh, o.interval || 5000);
   };

@@ -3,8 +3,12 @@ import multer from 'multer';
 import { query, tx } from '../db.js';
 import { requireAuth, hashPassword } from '../auth.js';
 import { computeResults } from '../results.js';
+import { config } from '../config.js';
+import { requireUuidParam } from '../security.js';
 
 const router = Router();
+router.param('id', requireUuidParam);
+router.param('optId', requireUuidParam);
 
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const upload = multer({
@@ -59,7 +63,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       ORDER BY p.created_at DESC`,
     [req.user.id]
   );
-  res.render('dashboard', { polls, baseUrl: process.env.BASE_URL || '' });
+  res.render('dashboard', { polls, baseUrl: config.baseUrl });
 });
 
 // Formulaire de création
@@ -194,7 +198,7 @@ router.get('/polls/:id/manage', requireAuth, async (req, res) => {
   res.render('poll_manage', {
     poll, options, results, ballotCount, participants,
     voterStats: voterStats[0],
-    baseUrl: process.env.BASE_URL || '',
+    baseUrl: config.baseUrl,
     notice: req.query.ok || null,
     error: req.query.err || null,
   });

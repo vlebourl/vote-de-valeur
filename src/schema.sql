@@ -43,24 +43,26 @@ ALTER TABLE options ALTER COLUMN label DROP NOT NULL;
 ALTER TABLE options ALTER COLUMN label SET DEFAULT '';
 
 -- Participation d'un votant à un vote (identité, séparée des scores)
--- email_hash = HMAC(email) : garantit l'unicité sans stocker l'email en clair lié au bulletin.
+-- email_hash = HMAC(email ou nom) : garantit l'unicité sans stocker l'identité en clair.
+-- token_hash = SHA-256 du jeton du lien de vote : le jeton lui-même n'est jamais stocké.
 CREATE TABLE IF NOT EXISTS poll_voters (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   poll_id       UUID NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
   email_hash    TEXT NOT NULL,
-  magic_token   TEXT NOT NULL UNIQUE,   -- jeton du lien de vote envoyé par email
-  verified_at   TIMESTAMPTZ,            -- date de clic sur le lien magique
-  voted_at      TIMESTAMPTZ,            -- date de soumission du bulletin (vote définitif)
+  token_hash    TEXT NOT NULL UNIQUE,
+  verified_at   TIMESTAMPTZ,            -- ouverture du lien (au jour près si scrutin secret)
+  voted_at      TIMESTAMPTZ,            -- soumission du bulletin (au jour près si scrutin secret)
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (poll_id, email_hash)          -- 1 email = 1 vote par scrutin
 );
 CREATE INDEX IF NOT EXISTS idx_voters_poll ON poll_voters(poll_id);
 
 -- Un bulletin (anonyme, non liable à l'identité du votant)
+-- created_at n'est renseigné qu'en scrutin nominatif.
 CREATE TABLE IF NOT EXISTS ballots (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   poll_id    UUID NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_ballots_poll ON ballots(poll_id);
 
@@ -86,3 +88,42 @@ ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS email        TEXT;   -- en cla
 ALTER TABLE poll_voters  ADD COLUMN IF NOT EXISTS display_name TEXT;   -- nom optionnel, uniquement si nominatif
 ALTER TABLE ballots      ADD COLUMN IF NOT EXISTS voter_id     UUID REFERENCES poll_voters(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_ballots_voter ON ballots(voter_id);
+
+-- === Secret du bulletin (migration des bases existantes) ===
+-- 1. Les jetons des liens ne sont plus stockés en clair, seulement leur SHA-256
+--    (les liens déjà envoyés restent valables).
+ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS token_hash   TEXT;
+-- Email chiffré avec une clé dérivée du jeton du votant (scrutin secret), effacé après le vote.
+ALTER TABLE poll_voters ADD COLUMN IF NOT EXISTS email_sealed TEXT;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = current_schema() AND table_name = 'poll_voters' AND column_name = 'magic_token') THEN
+    UPDATE poll_voters SET token_hash = encode(digest(magic_token, 'sha256'), 'hex') WHERE token_hash IS NULL;
+    ALTER TABLE poll_voters DROP COLUMN magic_token;
+  END IF;
+END $$;
+ALTER TABLE poll_voters ALTER COLUMN token_hash SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS poll_voters_token_hash_key ON poll_voters(token_hash);
+
+-- 2. Scrutins secrets : aucune identité en clair pour les votants dont le
+--    bulletin n'est pas lié (un bulletin lié a été déposé en scrutin nominatif).
+UPDATE poll_voters pv
+   SET email = NULL, display_name = NULL
+  FROM polls p
+ WHERE p.id = pv.poll_id AND NOT p.is_nominative
+   AND (pv.email IS NOT NULL OR pv.display_name IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM ballots b WHERE b.voter_id = pv.id);
+
+-- 3. Pas d'horodatage précis qui permettrait de rapprocher un votant de son
+--    bulletin anonyme.
+ALTER TABLE ballots ALTER COLUMN created_at DROP NOT NULL;
+ALTER TABLE ballots ALTER COLUMN created_at DROP DEFAULT;
+UPDATE ballots SET created_at = NULL WHERE voter_id IS NULL AND created_at IS NOT NULL;
+UPDATE poll_voters pv
+   SET voted_at    = date_trunc('day', pv.voted_at, 'UTC'),
+       verified_at = date_trunc('day', pv.verified_at, 'UTC')
+  FROM polls p
+ WHERE p.id = pv.poll_id AND NOT p.is_nominative
+   AND NOT EXISTS (SELECT 1 FROM ballots b WHERE b.voter_id = pv.id)
+   AND (pv.voted_at <> date_trunc('day', pv.voted_at, 'UTC') OR pv.verified_at <> date_trunc('day', pv.verified_at, 'UTC'));
