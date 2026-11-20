@@ -1,10 +1,12 @@
+# Application + PostgreSQL. Les secrets viennent de l'environnement ou d'un
+# fichier .env à côté de ce fichier (voir .env.example et `npm run init-env`).
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: vote
-      POSTGRES_PASSWORD: vote
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Définissez POSTGRES_PASSWORD (voir .env.example)}
       POSTGRES_DB: vote_de_valeur
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -21,11 +23,13 @@ services:
       db:
         condition: service_healthy
     environment:
+      NODE_ENV: production
       PORT: 3000
       BASE_URL: ${BASE_URL:-http://localhost:3000}
-      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
-      EMAIL_HASH_SECRET: ${EMAIL_HASH_SECRET:-dev-insecure-email-secret-change-me}
-      DATABASE_URL: postgres://vote:vote@db:5432/vote_de_valeur
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      JWT_SECRET: ${JWT_SECRET:?Définissez JWT_SECRET (voir .env.example)}
+      EMAIL_HASH_SECRET: ${EMAIL_HASH_SECRET:?Définissez EMAIL_HASH_SECRET (voir .env.example)}
+      DATABASE_URL: postgres://vote:${POSTGRES_PASSWORD}@db:5432/vote_de_valeur
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
