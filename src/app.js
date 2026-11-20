@@ -2,6 +2,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { config } from './config.js';
 import { query } from './db.js';
@@ -15,6 +16,7 @@ import accountRoutes from './routes/account.js';
 import { createApiRouter } from './routes/api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const assetVersion = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')).version;
 
 export function createApp({ rateLimits = true } = {}) {
   const app = express();
@@ -24,6 +26,9 @@ export function createApp({ rateLimits = true } = {}) {
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
   app.locals.formatDateTime = (date) => formatDateTime(date, config.timeZone);
+  // Version dans l'URL des fichiers statiques : chaque mise à jour force leur rechargement
+  // malgré le cache des navigateurs et du CDN.
+  app.locals.assetVersion = assetVersion;
 
   app.use(securityHeaders);
   app.use(express.static(join(__dirname, '..', 'public')));

@@ -333,3 +333,9 @@ test('favicon : déclarée dans les pages et servie', async () => {
   await request(app).get('/apple-touch-icon.png').expect(200);
   assert.match((await request(app).get('/api/docs').expect(200)).text, /favicon.svg/);
 });
+
+test('fichiers statiques versionnés (cache des navigateurs et du CDN)', async () => {
+  const { version } = JSON.parse((await import('node:fs')).readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const page = await request(app).get('/').expect(200);
+  assert.ok(page.text.includes(`/style.css?v=${version}`));
+});

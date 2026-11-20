@@ -6,6 +6,8 @@
 - A new-choice notice no longer invalidates the voter's existing link: it adds an extra personal link (stored as a
   hash), and the link from the confirmation email keeps working. A new link requested by the voter still replaces all
   of their links.
+- Stylesheet and script URLs carry the app version, so browsers and the CDN load the new files after an update
+  (the 1.2 ballot warning appeared unstyled from a cached stylesheet).
 
 ## 1.2.0 — 2026-11-20
 

@@ -186,7 +186,7 @@
   </div>
 </div>
 <% if (!pollClosed && ballotCount > 0) { %>
-<script src="/results.js"></script>
+<script src="/results.js?v=<%= assetVersion %>"></script>
 <script>vvStartLive({ url: '/polls/' + <%- JSON.stringify(poll.id) %> + '/results.json', containerId: 'manage-results' });</script>
 <% } %>
 
