@@ -4,6 +4,7 @@ import request from 'supertest';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import pool from '../src/db.js';
 import { openapi } from '../src/api/openapi.js';
+import { devFailures } from '../src/mailer.js';
 import { newApp, organizer, submitBallot, lastMail, pathOf, unique, query } from './helpers.js';
 
 after(() => pool.end());
@@ -109,6 +110,8 @@ describe('scrutins', () => {
       [{ title: 'T', options: ['A', 'B'], couleur: 'rouge' }, /couleur/],
       [{ title: 'T', options: ['A', 'B'], close_at: '15/12/2026' }, /ISO 8601/],
       [{ title: 'T', options: ['A', 'B'], close_at: '2026-12-15T18:00' }, /ISO 8601/],
+      [{ title: 'T', options: ['A', 'B'], close_at: '2027-02-30T18:00:00Z' }, /ISO 8601/],
+      [{ title: 'T', options: ['A', 'B'], close_at: '2027-02-10T24:30:00Z' }, /ISO 8601/],
       [{ title: 'T', options: ['A', 'B'], is_private: 'oui' }, /booléen/],
       [{ title: 'T', options: ['A', 'B'], auth_mode: 'sms' }, /auth_mode/],
       [{ title: 'x'.repeat(201), options: ['A', 'B'] }, /200 caractères/],
@@ -121,6 +124,8 @@ describe('scrutins', () => {
     }
     const bad = await call('post', '/polls').set('Content-Type', 'application/json').send('{"title":').expect(400);
     assert.equal(bad.body.error.code, 'invalid_json');
+    const form = await call('post', '/polls').type('form').send({ title: 'T' }).expect(415);
+    assert.equal(form.body.error.code, 'unsupported_media_type');
   });
 
   test('modification, clôture, retrait de la date, suppression', async () => {
@@ -165,7 +170,14 @@ describe('options', () => {
       .attach('image', Buffer.from('pas une image'), { filename: 'x.txt', contentType: 'text/plain' }).expect(400);
     await call('post', `/polls/${poll.id}/options`).send({}).expect(400);
 
-    const edited = await call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ label: 'C bis' }).expect(200);
+    // Modifications simultanées de champs distincts : aucune n'est perdue.
+    await Promise.all([
+      call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ label: 'C bis' }).expect(200),
+      call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ description: 'troisième' }).expect(200),
+    ]);
+    const empty = await call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({ label: '' }).expect(400);
+    assert.match(empty.body.error.message, /intitulé/);
+    const edited = await call('patch', `/polls/${poll.id}/options/${added.body.id}`).send({}).expect(200);
     assert.equal(edited.body.label, 'C bis');
     assert.equal(edited.body.description, 'troisième', 'champ absent = inchangé');
 
@@ -239,19 +251,55 @@ describe('votants et résultats', () => {
     await call('post', `/polls/${poll.id}/invitations`).send({ recipients: ['a@test.local'] }).expect(409);
   });
 
-  test('limite d\'envois d\'invitations par jeton', async () => {
+  test('quota d\'invitations par organisateur, tous jetons confondus', async () => {
     const limited = newApp({ rateLimits: true });
     const org = await organizer(limited);
-    const res = await org.agent.post('/account/api/tokens').type('form').send({ name: 'lim', scope: 'write' }).expect(201);
-    const token = res.text.match(/value="(vdv_[A-Za-z0-9_-]{43})"/)[1];
-    const call = (m, p) => request(limited)[m](`/api/v1${p}`).set('Authorization', `Bearer ${token}`);
-    const { body: poll } = await newPoll(call).expect(201);
-    let last;
-    for (let i = 0; i < 11; i++) {
-      last = await call('post', `/polls/${poll.id}/invitations`).send({ recipients: ['invalide'] });
+    const tokens = [];
+    for (const name of ['un', 'deux']) {
+      const res = await org.agent.post('/account/api/tokens').type('form').send({ name, scope: 'write' }).expect(201);
+      tokens.push(res.text.match(/value="(vdv_[A-Za-z0-9_-]{43})"/)[1]);
     }
-    assert.equal(last.status, 429);
-    assert.equal(last.body.error.code, 'rate_limited');
+    const call = (i, m, p) => request(limited)[m](`/api/v1${p}`).set('Authorization', `Bearer ${tokens[i]}`);
+    const { body: poll } = await newPoll((m, p) => call(0, m, p)).expect(201);
+    const batch = (n) => Array.from({ length: 100 }, (_, i) => `q${n}-${i}@test.local`);
+    for (let n = 0; n < 5; n++) {
+      await call(n % 2, 'post', `/polls/${poll.id}/invitations`).send({ recipients: batch(n) }).expect(200);
+    }
+    const over = await call(1, 'post', `/polls/${poll.id}/invitations`).send({ recipients: ['encore@test.local'] }).expect(429);
+    assert.equal(over.body.error.code, 'rate_limited');
+  });
+
+  test('échec d\'envoi : l\'ancien lien reste valable', async () => {
+    const { call } = await client();
+    const { body: poll } = await newPoll(call).expect(201);
+    const dan = `${unique('dan')}@test.local`;
+    await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [dan] }).expect(200);
+    const first = pathOf(lastMail(dan, 'magic-link').url);
+    devFailures.next = 1;
+    const res = await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [dan] }).expect(422);
+    assert.deepEqual(res.body.rejected, [{ email: dan, reason: 'send_failed' }]);
+    await request(app).get(first).expect(200);
+  });
+
+  test('une personne qui a déjà voté n\'est pas relancée et garde son permalien', async () => {
+    const { call } = await client();
+    const { body: poll } = await newPoll(call).expect(201);
+    const eve = `${unique('eve')}@test.local`;
+    await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [eve] }).expect(200);
+    const ballot = pathOf(lastMail(eve, 'magic-link').url);
+    await submitBallot(app, ballot, { Lyon: 1 });
+    const permalink = pathOf(lastMail(eve, 'confirmation').permalink);
+    const res = await call('post', `/polls/${poll.id}/invitations`).send({ recipients: [eve] }).expect(422);
+    assert.deepEqual(res.body.rejected, [{ email: eve, reason: 'already_voted' }]);
+    await request(app).get(permalink).expect(200);
+  });
+
+  test('adresses : uniquement des adresses nues', async () => {
+    const { call } = await client();
+    const { body: poll } = await newPoll(call).expect(201);
+    const res = await call('post', `/polls/${poll.id}/invitations`)
+      .send({ recipients: ['Alice <alice@test.local>', 'a(x)@test.local', 'a@test.local, b@test.local'] }).expect(422);
+    assert.deepEqual(res.body.rejected.map((r) => r.reason), ['invalid_email', 'invalid_email', 'invalid_email']);
   });
 });
 
@@ -264,7 +312,7 @@ describe('documentation OpenAPI', () => {
   });
 
   test('chaque opération documentée existe, et chaque route est documentée', async () => {
-    const { call } = await client('read');
+    const { call } = await client('write');
     const spec = openapi('');
     const fake = '00000000-0000-4000-8000-000000000000';
     for (const [path, item] of Object.entries(spec.paths)) {

@@ -14,9 +14,13 @@ import { ServiceError, invalid, conflict } from '../services/errors.js';
 import * as polls from '../services/polls.js';
 import { authenticateApiToken } from '../services/apiTokens.js';
 import { sendVoterLink, normalizeEmail } from '../services/voters.js';
+import { createQuota } from '../services/quota.js';
 import { openapi } from '../api/openapi.js';
 
 export const MAX_INVITATIONS_PER_REQUEST = 100;
+// Emails d'invitation par heure : par organisateur (tous jetons confondus) et
+// pour l'ensemble du service.
+export const INVITATIONS_PER_HOUR = { user: 500, service: Number(process.env.API_INVITATIONS_PER_HOUR) || 2000 };
 
 class ApiError extends Error {
   constructor(status, code, message, details) {
@@ -88,12 +92,19 @@ function optBoolean(b, key) {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
+// Date et heure réelles (refuse le 30 février ou 25 h, que Date « corrigerait »).
+function isCalendarDate(v) {
+  const [, y, mo, d, h, mi, sec = '0'] = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v);
+  const day = new Date(Date.UTC(+y, +mo - 1, +d));
+  return day.getUTCMonth() === +mo - 1 && day.getUTCDate() === +d && +h < 24 && +mi < 60 && +sec < 60;
+}
+
 // close_at : date ISO 8601 avec fuseau (« 2026-12-15T18:00:00+01:00 »), ou null.
 function optDate(b, key) {
   const v = b[key];
   if (v === undefined) return undefined;
   if (v === null) return null;
-  const d = typeof v === 'string' && ISO_DATE.test(v) ? new Date(v) : null;
+  const d = typeof v === 'string' && ISO_DATE.test(v) && isCalendarDate(v) ? new Date(v) : null;
   if (!d || Number.isNaN(d.getTime())) {
     throw invalid(`« ${key} » doit être une date ISO 8601 avec fuseau (ex. 2026-12-15T18:00:00+01:00), ou null.`);
   }
@@ -146,7 +157,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
     next();
   });
 
-  // Portée : un jeton « read » ne peut que lire.
+  // Portée : un jeton « read » ne peut que lire (GET, HEAD).
   router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.api.scope !== 'write') {
       return next(new ApiError(403, 'insufficient_scope', 'Ce jeton est en lecture seule.'));
@@ -159,11 +170,17 @@ export function createApiRouter({ rateLimits = true } = {}) {
     keyGenerator: (req) => req.api?.tokenId || ipKeyGenerator(req.ip),
     handler: (req, res) => sendError(res, new ApiError(429, 'rate_limited', message)),
   });
-  const invitationLimit = rateLimits
-    ? perToken(60, 10, 'Trop d’invitations : 10 envois par heure au maximum.')
-    : (req, res, next) => next();
   if (rateLimits) router.use(perToken(15, 600, 'Trop de requêtes pour ce jeton. Réessayez plus tard.'));
+  const userQuota = createQuota({ limit: INVITATIONS_PER_HOUR.user, windowMs: 3600_000 });
+  const serviceQuota = createQuota({ limit: INVITATIONS_PER_HOUR.service, windowMs: 3600_000 });
 
+  // Corps acceptés : JSON, et multipart pour l'image d'une option.
+  router.use((req, res, next) => {
+    if (req.method !== 'POST' && req.method !== 'PATCH') return next();
+    if (req.is('application/json')) return next();
+    if (req.method === 'POST' && /^\/polls\/[^/]+\/options$/.test(req.path) && req.is('multipart/form-data')) return next();
+    next(new ApiError(415, 'unsupported_media_type', 'Content-Type attendu : application/json (multipart/form-data pour une image d’option).'));
+  });
   router.use(express.json({ limit: '100kb' }));
 
   // Identifiants : UUID, sinon 404 sans interroger la base.
@@ -296,7 +313,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
   });
 
   // Envoie à chaque adresse son lien de vote personnel (scrutin « email »).
-  router.post('/polls/:pollId/invitations', invitationLimit, async (req, res) => {
+  router.post('/polls/:pollId/invitations', async (req, res) => {
     const poll = await owned(req);
     const b = body(req, ['recipients']);
     if (poll.auth_mode !== 'email') throw conflict('Invitations possibles seulement pour un scrutin par email.');
@@ -307,7 +324,7 @@ export function createApiRouter({ rateLimits = true } = {}) {
       throw invalid(`${MAX_INVITATIONS_PER_REQUEST} destinataires au maximum par requête.`);
     }
 
-    const sent = [];
+    const valid = [];
     const rejected = [];
     const seen = new Set();
     for (const entry of list) {
@@ -317,11 +334,29 @@ export function createApiRouter({ rateLimits = true } = {}) {
       if (!email) { rejected.push({ email: typeof raw === 'string' ? raw : null, reason: 'invalid_email' }); continue; }
       if (seen.has(email)) { rejected.push({ email, reason: 'duplicate' }); continue; }
       seen.add(email);
+      valid.push({ email, name });
+    }
+
+    // Quotas d'emails (tous jetons confondus), réservés avant tout envoi.
+    if (rateLimits && valid.length) {
+      if (!userQuota.take(req.api.user.id, valid.length)) {
+        throw new ApiError(429, 'rate_limited', `Quota d’invitations atteint : ${INVITATIONS_PER_HOUR.user} emails par heure et par organisateur.`);
+      }
+      if (!serviceQuota.take('service', valid.length)) {
+        throw new ApiError(429, 'rate_limited', 'Quota global d’invitations atteint. Réessayez plus tard.');
+      }
+    }
+
+    // Une personne qui a déjà voté n'est pas relancée : son permalien de
+    // résultats reste valable.
+    const sent = [];
+    for (const { email, name } of valid) {
       try {
-        await sendVoterLink(poll, email, name);
-        sent.push(email);
+        const outcome = await sendVoterLink(poll, email, name, { keepVoted: true });
+        if (outcome === 'sent') sent.push(email);
+        else rejected.push({ email, reason: 'already_voted' });
       } catch (err) {
-        console.error('Invitation non envoyée :', err);
+        console.error('Invitation non envoyée :', err.code || err.name, err.responseCode || '');
         rejected.push({ email, reason: 'send_failed' });
       }
     }

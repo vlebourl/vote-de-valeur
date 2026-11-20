@@ -32,7 +32,7 @@ En scrutin secret, la base ne contient rien qui relie un votant à son bulletin 
 - pour envoyer la confirmation, l'email est gardé **chiffré avec une clé dérivée du jeton du votant** (AES-256-GCM, HKDF). Le serveur ne peut le déchiffrer qu'au moment où le votant ouvre son lien pour voter, puis l'efface ;
 - les bulletins n'ont **ni référence au votant, ni horodatage**, et la date de vote du votant est arrondie au jour.
 
-Limites, dites franchement : quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée.
+Limites, dites franchement : quelqu'un qui observe le serveur en direct pendant les votes (journaux, trafic, réplication de la base) pourrait encore les rapprocher. L'ordre physique des lignes en base peut aussi trahir l'ordre des votes d'une même journée. Enfin, les résultats en direct sont un agrégat : dans un tout petit scrutin (un ou deux votants), ou entre deux lectures encadrant un seul nouveau bulletin, les totaux peuvent révéler un vote.
 
 ## API REST
 
@@ -61,11 +61,11 @@ Points d'accès :
 
 Documentation interactive sur `/api/docs`, spécification OpenAPI 3.1 sur `/api/v1/openapi.json`.
 
-Par choix, **le vote n'est pas exposé** : un votant vote toujours par son lien personnel, ce qui préserve « un email = un vote » et le secret du bulletin. Limites : 600 requêtes par 15 minutes et par jeton ; 10 envois d'invitations par heure, de 100 destinataires au plus.
+Par choix, **le vote n'est pas exposé** : un votant vote toujours par son lien personnel, ce qui préserve « un email = un vote » et le secret du bulletin. Limites : 600 requêtes par 15 minutes et par jeton ; 100 destinataires par envoi d'invitations et 500 invitations par heure et par organisateur, tous jetons confondus (plus un plafond pour tout le service). Une personne qui a déjà voté n'est jamais relancée : son lien de résultats reste valable.
 
 ## Stack
 
-Node.js 20+ · Express 5 · API REST OpenAPI 3.1 · PostgreSQL (`pg`) · rendu serveur EJS · nodemailer (SMTP) · cookie de session httpOnly (JWT) + bcrypt. Aucune étape de build côté navigateur : un peu de JavaScript natif pour les résultats en direct.
+Node.js 22+ · Express 5 · API REST OpenAPI 3.1 · PostgreSQL (`pg`) · rendu serveur EJS · nodemailer (SMTP) · cookie de session httpOnly (JWT) + bcrypt. Aucune étape de build côté navigateur : un peu de JavaScript natif pour les résultats en direct.
 
 Sécurité : validation des UUID de toutes les routes, contrôle d'origine sur toute écriture (CSRF), limitation de débit par IP (connexion, inscription, liens magiques, mots de passe des scrutins), pas de redirection ouverte, en-têtes de sécurité (`Referrer-Policy: same-origin` : les jetons ne fuient pas par le `Referer`), refus de démarrer en production avec des secrets absents ou faibles.
 
@@ -82,7 +82,7 @@ Les migrations s'appliquent au démarrage. Avec `SMTP_DEV_MODE=true` (par défau
 
 ### En local
 
-Prérequis : Node ≥ 20.19 et une base PostgreSQL.
+Prérequis : Node ≥ 22 et une base PostgreSQL.
 
 ```bash
 npm install
@@ -106,7 +106,7 @@ npm run lint
 - la migration d'une base existante ;
 - les droits d'accès, le CSRF, les redirections et la limitation de débit.
 
-La CI lance le lint, les tests (Node 20 et 22), `npm audit` et la construction de l'image Docker à chaque push.
+La CI lance le lint, les tests (Node 22 et 24), `npm audit` et la construction de l'image Docker à chaque push.
 
 ## Configuration
 

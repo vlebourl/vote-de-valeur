@@ -12,7 +12,10 @@ const common = {
   429: error('Limite de débit atteinte.'),
 };
 const forPoll = { ...common, 404: error('Scrutin introuvable (ou appartenant à un autre organisateur).') };
-const writes = { 403: error('Jeton en lecture seule.') };
+const writes = {
+  403: error('Jeton en lecture seule.'),
+  415: error('Content-Type non pris en charge (JSON attendu).'),
+};
 
 export function openapi(baseUrl) {
   return {
@@ -24,15 +27,16 @@ export function openapi(baseUrl) {
         'Créer et gérer des **votes de valeur** (chaque option notée de −2 à +2, classement à la somme) depuis un script.',
         '',
         '**Authentification** : créez un jeton dans votre compte (menu *API*) puis envoyez-le dans l’en-tête',
-        '`Authorization: Bearer vdv_…`. Un jeton `read` ne peut que lire ; un jeton `write` peut tout faire.',
+        '`Authorization: Bearer vdv_…`. Un jeton `read` ne peut que lire (GET, HEAD) ; un jeton `write` peut tout faire.',
+        'Les corps de requête sont en JSON (`Content-Type: application/json`), sauf l’ajout d’une option avec image (multipart).',
         '',
         '**Vote** : l’API ne permet pas de voter. Chaque votant vote par son lien personnel, reçu par email',
         '(voir `POST /polls/{pollId}/invitations`) ou obtenu sur la page du vote : un email = un vote, et le',
         'secret du bulletin est préservé.',
         '',
         '**Erreurs** : réponse JSON `{ "error": { "code", "message" } }`.',
-        '**Limites** : 600 requêtes par 15 minutes et par jeton ; 10 envois d’invitations par heure et par jeton,',
-        '100 destinataires par envoi.',
+        '**Limites** : 600 requêtes par 15 minutes et par jeton ; 100 destinataires par envoi d’invitations et',
+        '500 invitations par heure et par organisateur, tous jetons confondus.',
       ].join('\n'),
       license: { name: 'MIT', url: 'https://opensource.org/licenses/MIT' },
     },
@@ -61,7 +65,7 @@ export function openapi(baseUrl) {
           requestBody: { required: true, content: { 'application/json': { schema: ref('PollCreate') } } },
           responses: {
             201: json(ref('PollDetail'), 'Scrutin créé (en-tête Location).'),
-            400: error('Données invalides.'), ...writes, ...common,
+            400: error('Données invalides.'), 413: error('Corps trop volumineux (100 Ko).'), ...writes, ...common,
           },
         },
       },
@@ -142,10 +146,10 @@ export function openapi(baseUrl) {
         parameters: [pollId],
         post: {
           tags: ['Votants'], summary: 'Envoyer leur lien de vote à des votants', operationId: 'sendInvitations',
-          description: 'Scrutin « email » ouvert uniquement. Chaque envoi crée un nouveau lien qui remplace le précédent. 100 destinataires par requête.',
+          description: 'Scrutin « email » ouvert uniquement. Chaque envoi crée un nouveau lien qui remplace le précédent (sauf échec d’envoi). Adresses nues uniquement (pas de « Nom <adresse> »). 100 destinataires par requête.',
           requestBody: { required: true, content: { 'application/json': { schema: ref('InvitationRequest') } } },
           responses: {
-            200: json(ref('InvitationResult'), 'Au moins une invitation envoyée.'),
+            200: json(ref('InvitationResult'), 'Au moins une invitation envoyée. Une personne ayant déjà voté n’est pas relancée (raison already_voted).'),
             422: json(ref('InvitationResult'), 'Aucune invitation envoyée.'),
             400: error('Données invalides.'), 409: error('Scrutin clôturé ou en mode « nom ».'), ...writes, ...forPoll,
           },
@@ -303,7 +307,7 @@ export function openapi(baseUrl) {
             sent: { type: 'array', items: { type: 'string' } },
             rejected: {
               type: 'array',
-              items: { type: 'object', properties: { email: { type: ['string', 'null'] }, reason: { enum: ['invalid_email', 'duplicate', 'send_failed'] } } },
+              items: { type: 'object', properties: { email: { type: ['string', 'null'] }, reason: { enum: ['invalid_email', 'duplicate', 'already_voted', 'send_failed'] } } },
             },
           },
         },

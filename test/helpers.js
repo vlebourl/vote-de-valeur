@@ -58,7 +58,7 @@ export async function ballotForm(app, ballotPath, scores = {}) {
   const page = await request(app).get(ballotPath).expect(200);
   const ids = [...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]);
   const labels = [...page.text.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]);
-  const form = {};
+  const form = { mode: page.text.match(/name="mode" value="(\w+)"/)[1] };
   [...new Set(ids)].forEach((id, i) => { form[`score_${id}`] = String(scores[labels[i]] ?? 0); });
   return form;
 }

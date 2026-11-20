@@ -20,7 +20,13 @@ const FROM = process.env.SMTP_FROM || 'Vote de valeur <noreply@example.com>';
 // En mode développement, les emails ne partent pas : ils sont affichés dans la
 // console et gardés ici (les 50 derniers), ce qui sert aussi aux tests.
 export const devOutbox = [];
+// Mode développement : nombre de prochains envois à faire échouer (tests).
+export const devFailures = { next: 0 };
 function keepInOutbox(message) {
+  if (devFailures.next > 0) {
+    devFailures.next -= 1;
+    throw Object.assign(new Error('Échec SMTP simulé'), { code: 'EDEVFAIL' });
+  }
   devOutbox.push(message);
   if (devOutbox.length > 50) devOutbox.shift();
 }

@@ -183,8 +183,21 @@ export async function updatePoll(poll, changes) {
   if (!sets.length) return poll;
 
   values.push(poll.id);
-  const { rows } = await query(`UPDATE polls SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING *`, values);
-  return rows[0];
+  return tx(async (client) => {
+    const { rows } = await client.query(`UPDATE polls SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING *`, values);
+    if (!rows[0]) throw notFound();
+    // Retour au vote secret : les personnes inscrites mais n'ayant pas encore
+    // voté voteront en secret, leur identité en clair n'a plus lieu d'être.
+    // (Les bulletins déjà déposés en nominatif restent liés, mais ne sont plus affichés.)
+    if (changes.isNominative === false) {
+      await client.query(
+        `UPDATE poll_voters SET email = NULL, display_name = NULL
+          WHERE poll_id = $1 AND voted_at IS NULL AND (email IS NOT NULL OR display_name IS NOT NULL)`,
+        [poll.id]
+      );
+    }
+    return rows[0];
+  });
 }
 
 export async function deletePoll(poll) {
@@ -213,25 +226,26 @@ export async function addOption(poll, option) {
   });
 }
 
-// changes : { label?, description? }
+// changes : { label?, description? } ; un champ absent reste inchangé.
 export async function editOption(poll, optionId, changes) {
-  const { rows } = await query(
-    'SELECT label, description, (image_data IS NOT NULL) AS has_image FROM options WHERE id = $1 AND poll_id = $2',
-    [optionId, poll.id]
-  );
-  const current = rows[0];
-  if (!current) throw notFound('Option introuvable.');
-  const label = changes.label === undefined ? current.label : checkLength(text(changes.label), LIMITS.label, 'Intitulé');
+  const label = changes.label === undefined ? null : checkLength(text(changes.label), LIMITS.label, 'Intitulé');
   const description = changes.description === undefined
-    ? current.description
+    ? null
     : checkLength(text(changes.description), LIMITS.optionDescription, 'Description');
-  if (!label && !current.has_image) throw invalid('Une option sans image doit conserver un intitulé.');
-  const { rows: updated } = await query(
-    `UPDATE options SET label = $1, description = $2 WHERE id = $3 AND poll_id = $4
-     RETURNING id, label, description, position, (image_data IS NOT NULL) AS has_image`,
+  // Mise à jour des seuls champs fournis, en une requête (pas de perte en cas
+  // de modifications simultanées) ; une option sans image garde un intitulé.
+  const { rows } = await query(
+    `UPDATE options
+        SET label = COALESCE($1, label), description = COALESCE($2, description)
+      WHERE id = $3 AND poll_id = $4
+        AND (image_data IS NOT NULL OR COALESCE($1, label) <> '')
+      RETURNING id, label, description, position, (image_data IS NOT NULL) AS has_image`,
     [label, description, optionId, poll.id]
   );
-  return updated[0];
+  if (rows[0]) return rows[0];
+  const { rows: exists } = await query('SELECT 1 FROM options WHERE id = $1 AND poll_id = $2', [optionId, poll.id]);
+  if (!exists[0]) throw notFound('Option introuvable.');
+  throw invalid('Une option sans image doit conserver un intitulé.');
 }
 
 // Un scrutin doit conserver au moins 2 options.

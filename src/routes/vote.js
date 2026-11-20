@@ -82,7 +82,7 @@ router.post('/vote/:id/request', async (req, res) => {
   try {
     await sendVoterLink(poll, email, req.body.name);
   } catch (err) {
-    console.error('Envoi email échoué :', err);
+    console.error('Envoi du lien de vote échoué :', err.code || err.name, err.responseCode || '');
     return res.status(500).render('vote_email', {
       poll, closed: false, sent: false,
       error: "L'envoi de l'email a échoué. Réessayez plus tard.",
@@ -171,12 +171,18 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
   const { rows: options } = await query('SELECT id, label FROM options WHERE poll_id = $1 ORDER BY position', [poll.id]);
 
   const myScores = [];
-  const recorded = await tx(async (client) => {
+  const outcome = await tx(async (client) => {
+    // Le mode (secret ou nominatif) doit être celui que le votant a vu sur son
+    // bulletin. Verrou partagé : une bascule de mode attend la fin de ce vote.
+    const { rows: current } = await client.query('SELECT is_nominative FROM polls WHERE id = $1 FOR SHARE', [poll.id]);
+    poll.is_nominative = current[0].is_nominative;
+    if (req.body.mode !== (poll.is_nominative ? 'nominative' : 'secret')) return 'mode_changed';
+
     // Verrou sur le votant : deux soumissions simultanées ne créent qu'un bulletin.
     const { rows: locked } = await client.query(
       'SELECT voted_at FROM poll_voters WHERE id = $1 FOR UPDATE', [voter.id]
     );
-    if (!locked[0] || locked[0].voted_at) return false;
+    if (!locked[0] || locked[0].voted_at) return 'already_voted';
 
     // Scrutin secret : bulletin sans lien vers le votant ni horodatage, et date
     // de vote arrondie au jour, pour qu'on ne puisse pas les rapprocher.
@@ -202,9 +208,16 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
         WHERE id = $1`,
       [voter.id, poll.is_nominative]
     );
-    return true;
+    return 'recorded';
   });
-  if (!recorded) return res.redirect(`/vote/${poll.id}/results/${token}`);
+  if (outcome === 'mode_changed') {
+    const { rows: ballotOptions } = await query(
+      `SELECT id, label, description, position, (image_data IS NOT NULL) AS has_image
+         FROM options WHERE poll_id = $1 ORDER BY position`, [poll.id]
+    );
+    return res.status(409).render('ballot', { poll, options: ballotOptions, token, modeChanged: true });
+  }
+  if (outcome === 'already_voted') return res.redirect(`/vote/${poll.id}/results/${token}`);
 
   // Confirmation par email (best-effort : ne bloque jamais le vote). En scrutin
   // secret, l'adresse n'est lisible qu'avec le jeton présenté maintenant.
@@ -220,7 +233,7 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
         permalink: resultsUrl(poll.id, token),
       });
     } catch (err) {
-      console.error('Confirmation de vote non envoyée :', err);
+      console.error('Confirmation de vote non envoyée :', err.code || err.name, err.responseCode || '');
     }
   }
 

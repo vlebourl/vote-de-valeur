@@ -8,7 +8,12 @@
 <% } %>
 <p>Attribuez une note à <strong>chaque option</strong>, de −2 (rejet) à +2 (soutien fort). 0 = neutre / sans avis.</p>
 
+<% if (typeof modeChanged !== 'undefined' && modeChanged) { %>
+  <div class="error">Le scrutin est passé en mode <strong><%= poll.is_nominative ? 'nominatif' : 'secret' %></strong> pendant que vous votiez : votre bulletin n'a pas été enregistré. Vérifiez vos notes et validez à nouveau.</div>
+<% } %>
 <form method="post" action="/vote/<%= poll.id %>/ballot/<%= token %>">
+  <%# Mode affiché au votant : le serveur refuse le bulletin s'il a changé entre-temps. %>
+  <input type="hidden" name="mode" value="<%= poll.is_nominative ? 'nominative' : 'secret' %>">
   <% options.forEach(function (o) { %>
     <div class="option-block">
       <% if (o.has_image) { %><img class="opt-vote-img" src="/options/<%= o.id %>/image" alt="<%= o.label %>"><% } %>

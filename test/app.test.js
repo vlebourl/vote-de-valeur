@@ -193,3 +193,44 @@ test('date de clôture : saisie à l\'heure de Paris, affichée à l\'heure de P
   const bad = await createPoll(agent, { close_at: 'demain', expectStatus: 400 });
   assert.match(bad.text, /Date de clôture invalide/);
 });
+
+test('bascule secret → nominatif pendant le vote : bulletin refusé et réaffiché avec l\'avertissement', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const email = `${unique('bascule')}@test.local`;
+  const ballot = await requestBallot(app, pollId, email);
+  const page = await request(app).get(ballot).expect(200);
+  const ids = [...new Set([...page.text.matchAll(/name="score_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
+  const form = { mode: 'secret', ...Object.fromEntries(ids.map((id) => [`score_${id}`, '1'])) };
+
+  await agent.post(`/polls/${pollId}/nominative`).type('form').send({ nominative: 'on' }).expect(302);
+  const refused = await request(app).post(ballot).type('form').send(form).expect(409);
+  assert.match(refused.text, /passé en mode <strong>nominatif<\/strong>/);
+  assert.match(refused.text, /name="mode" value="nominative"/);
+  const { rows } = await query('SELECT COUNT(*)::int AS n FROM ballots WHERE poll_id = $1', [pollId]);
+  assert.equal(rows[0].n, 0);
+
+  await request(app).post(ballot).type('form').send({ ...form, mode: 'nominative' }).expect(302);
+  const linked = await query('SELECT voter_id FROM ballots WHERE poll_id = $1', [pollId]);
+  assert.ok(linked.rows[0].voter_id, 'bulletin lié : le votant a vu l\'avertissement nominatif');
+});
+
+test('retour au secret : identités des personnes n\'ayant pas voté effacées', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent, { nominative: true });
+  const voted = `${unique('a-vote')}@test.local`;
+  const pending = `${unique('en-attente')}@test.local`;
+  await submitBallot(app, await requestBallot(app, pollId, voted, { name: 'A' }), { Lyon: 1 });
+  await requestBallot(app, pollId, pending, { name: 'B' });
+  await agent.post(`/polls/${pollId}/nominative`).type('form').send({ nominative: 'off' }).expect(302);
+  const { rows } = await query('SELECT email, display_name, voted_at IS NOT NULL AS voted FROM poll_voters WHERE poll_id = $1 ORDER BY voted DESC', [pollId]);
+  assert.equal(rows[0].email, voted, 'bulletin déposé en nominatif : identité conservée (non affichée)');
+  assert.deepEqual([rows[1].email, rows[1].display_name], [null, null]);
+});
+
+test('page de gestion : formulaire sans titre refusé', async () => {
+  const { agent } = await organizer(app);
+  const pollId = await createPoll(agent);
+  const res = await agent.post(`/polls/${pollId}/edit`).type('form').send({ description: 'x' }).expect(302);
+  assert.match(decodeURIComponent(res.headers.location), /err=Le titre ne peut pas être vide/);
+});

@@ -32,7 +32,7 @@ In a secret poll the database never holds anything that ties a voter to their ba
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
 - ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day.
 
-Limits, stated plainly: someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day.
+Limits, stated plainly: someone with live access to the server while votes are cast (logs, network traffic, database replication) could still correlate them. Physical row order in the database may also leak the order of votes cast on the same day. Live results are an aggregate: in a very small poll (one or two voters), or between two reads around a single new ballot, totals can reveal how someone voted.
 
 ## REST API
 
@@ -54,11 +54,11 @@ curl -H "Authorization: Bearer $VDV_TOKEN" https://vote.example.org/api/v1/polls
 
 Endpoints: list, create, read, update (title, description, closing date, open/closed, nominative), delete polls; add (JSON or multipart with image), edit and delete options; live results; participants of nominative polls; invitations. Interactive documentation is served at `/api/docs`, and the OpenAPI 3.1 spec at `/api/v1/openapi.json`.
 
-By design, **voting is not exposed**: a voter always votes through their personal link, which keeps "one email, one vote" and ballot secrecy intact. Limits: 600 requests per 15 minutes per token, 10 invitation batches of up to 100 recipients per hour.
+By design, **voting is not exposed**: a voter always votes through their personal link, which keeps "one email, one vote" and ballot secrecy intact. Limits: 600 requests per 15 minutes per token; up to 100 recipients per invitation request and 500 invitations per hour per organiser, all tokens combined (plus a service-wide cap). Someone who has already voted is never re-invited, so their results link stays valid.
 
 ## Tech stack
 
-Node.js 20+ · Express 5 · REST API with OpenAPI 3.1 · PostgreSQL (`pg`) · EJS server-side rendering · nodemailer (SMTP) · httpOnly JWT session cookie + bcrypt. No front-end build step: a little vanilla JS for live results.
+Node.js 22+ · Express 5 · REST API with OpenAPI 3.1 · PostgreSQL (`pg`) · EJS server-side rendering · nodemailer (SMTP) · httpOnly JWT session cookie + bcrypt. No front-end build step: a little vanilla JS for live results.
 
 Security hardening: UUID validation on every route parameter, same-origin check on every write (CSRF), per-IP rate limiting on login, sign-up, magic links and poll passwords, no open redirect, security headers (`Referrer-Policy: same-origin` keeps tokens out of `Referer`), and the app refuses to start in production with missing or weak secrets.
 
@@ -75,7 +75,7 @@ Migrations run automatically at start-up. With `SMTP_DEV_MODE=true` (the default
 
 ### Locally
 
-Requires Node ≥ 20.19 and a PostgreSQL database.
+Requires Node ≥ 22 and a PostgreSQL database.
 
 ```bash
 npm install
@@ -91,7 +91,7 @@ npm test     # unit + integration tests against a real PostgreSQL
 npm run lint
 ```
 
-`npm test` starts a throwaway embedded PostgreSQL, so nothing needs to be installed. Set `TEST_DATABASE_URL` to use an existing database instead (as the CI does). The suite covers the full voting flow, ballot secrecy at the database level, double-vote races, migration of a pre-existing database, access control, CSRF, open redirects and rate limiting. CI runs lint, tests (Node 20 and 22), `npm audit` and a Docker build on every push.
+`npm test` starts a throwaway embedded PostgreSQL, so nothing needs to be installed. Set `TEST_DATABASE_URL` to use an existing database instead (as the CI does). The suite covers the full voting flow, ballot secrecy at the database level, double-vote races, migration of a pre-existing database, access control, CSRF, open redirects and rate limiting. CI runs lint, tests (Node 22 and 24), `npm audit` and a Docker build on every push.
 
 ## Configuration
 

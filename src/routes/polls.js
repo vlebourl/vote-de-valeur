@@ -158,7 +158,7 @@ router.post('/polls/:id/nominative', requireAuth, (req, res) => manageAction(req
 }));
 
 router.post('/polls/:id/edit', requireAuth, (req, res) => manageAction(req, res, (poll) => polls.updatePoll(poll, {
-  title: req.body.title, description: req.body.description ?? '',
+  title: req.body.title ?? '', description: req.body.description ?? '',
 }).then(() => null), 'Titre et description mis à jour.'));
 
 router.post('/polls/:id/options', requireAuth, uploadSingle, (req, res) => manageAction(req, res, (poll) => polls.addOption(poll, {
