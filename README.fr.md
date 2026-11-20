@@ -27,7 +27,7 @@ Application web pour organiser des **votes de valeur** : chaque votant note **ch
 
 ## Le secret du bulletin
 
-En scrutin secret, aucune table ne relie un votant à son bulletin, et rien de ce que voit l'organisateur non plus :
+En scrutin secret, aucune table ne relie un votant à son bulletin, et l'organisateur ne voit ni adresse ni bulletin individuel :
 
 - l'email (ou le nom) du votant n'est stocké que sous forme de **HMAC**, qui garantit un seul vote par personne. Les alias d'une même boîte comptent pour une (suffixes `+…` partout ; points et `googlemail.com` chez Gmail) ;
 - le jeton du lien magique n'est stocké que sous forme d'**empreinte SHA-256** : une fuite de la base ne donne accès à aucun bulletin ;

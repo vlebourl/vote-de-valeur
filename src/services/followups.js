@@ -98,11 +98,12 @@ export async function subscriberCount(poll) {
 // instant, choix encore à noter et pas déjà signalés) ; le quota n'est réservé
 // qu'ensuite, pour un envoi réel. Le remplacement du lien n'est validé que si
 // l'email part. take(n) réserve n emails (false : quota atteint).
-// Renvoie des nombres seulement : { eligible, sent, failed, remaining }.
+// Renvoie des nombres seulement : { eligible, sent, failed, remaining, quotaReached }.
 export async function notifySubscribers(poll, { take = () => true } = {}) {
   const candidates = await pending(poll);
   let sent = 0;
   let failed = 0;
+  let quotaReached = false;
   for (const voterId of candidates) {
     const token = newToken();
     let done;
@@ -122,9 +123,9 @@ export async function notifySubscribers(poll, { take = () => true } = {}) {
         const notified = new Set(v[0].notified_option_ids);
         const fresh = missing.filter((o) => !notified.has(o.id));
         if (!fresh.length) return 'skip';
-        if (!take(1)) return 'quota';
         const email = openEmail(v[0].email_enc);
         if (!email) throw new Error('adresse illisible');
+        if (!take(1)) return 'quota';
         await client.query('UPDATE poll_voters SET token_hash = $1 WHERE id = $2', [hashToken(token), voterId]);
         await client.query(
           `UPDATE voter_notifications
@@ -144,9 +145,10 @@ export async function notifySubscribers(poll, { take = () => true } = {}) {
       continue;
     }
     if (done === 'sent') sent += 1;
+    if (done === 'quota') quotaReached = true;
     if (done === 'closed' || done === 'quota') break;
   }
-  return { eligible: candidates.length, sent, failed, remaining: await pendingCount(poll) };
+  return { eligible: candidates.length, sent, failed, remaining: await pendingCount(poll), quotaReached };
 }
 
 // Effacement des adresses des scrutins clos (statut ou date de clôture passée).

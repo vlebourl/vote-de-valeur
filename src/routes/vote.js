@@ -298,7 +298,7 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
 
   if (outcome === 'gone') return res.status(404).render('error', { message: 'Vote introuvable.' });
   if (outcome === 'token_replaced') {
-    return res.status(409).render('error', { message: 'Ce lien vient d\'être remplacé par un lien plus récent, envoyé par email : votre bulletin n\'a pas été enregistré. Utilisez le nouveau lien.' });
+    return res.status(409).render('error', { message: 'Ce lien vient d\'être remplacé par un lien plus récent : votre bulletin n\'a pas été enregistré. Utilisez le lien le plus récent (reçu par email, ou ouvert en ressaisissant votre nom).' });
   }
   if (outcome === 'closed') return res.render('vote_closed', { poll, voted: false });
   if (outcome === 'already_voted') return res.redirect(`/vote/${poll.id}/results/${token}`);

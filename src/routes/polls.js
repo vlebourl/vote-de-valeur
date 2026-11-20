@@ -193,7 +193,10 @@ router.post('/polls/:id/notify', requireAuth, (req, res) => manageAction(req, re
   if (!r.eligible) return 'Aucun votant à prévenir : personne n\'a de nouveau choix à noter.';
   return `Avis envoyé à ${r.sent} votant${r.sent > 1 ? 's' : ''}`
     + (r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''})` : '')
-    + (r.remaining ? `. ${r.remaining} restent à prévenir (quota de ${EMAILS_PER_HOUR.user} emails par heure atteint) : réessayez plus tard.` : '.');
+    + (!r.remaining ? '.'
+      : r.quotaReached
+        ? `. ${r.remaining} restent à prévenir (quota de ${EMAILS_PER_HOUR.user} emails par heure atteint) : réessayez plus tard.`
+        : `. ${r.remaining} restent à prévenir : réessayez.`);
 }));
 
 router.post('/polls/:id/status', requireAuth, async (req, res) => {

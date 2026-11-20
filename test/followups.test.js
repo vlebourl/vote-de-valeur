@@ -268,6 +268,7 @@ test('avis : un échec d\'envoi laisse la personne à prévenir et le compte', a
   devFailures.next = 1;
   const res = await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);
   assert.match(decodeURIComponent(res.headers.location), /1 échec/);
+  assert.doesNotMatch(decodeURIComponent(res.headers.location), /quota/, 'un échec d\'envoi n\'est pas un quota atteint');
   const { pendingCount } = await import('../src/services/followups.js');
   assert.equal(await pendingCount({ id: pollId }), 1);
   await agent.post(`/polls/${pollId}/notify`).type('form').send({}).expect(302);

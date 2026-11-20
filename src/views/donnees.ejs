@@ -22,8 +22,7 @@
   <h2 style="margin-top:0">Qui peut relier votre email à votre vote ? (scrutin secret)</h2>
   <p style="margin-top:0">En scrutin <strong>nominatif</strong>, l'organisateur voit qui a voté quoi : c'est annoncé sur le bulletin. Ce qui suit concerne le scrutin <strong>secret</strong>.</p>
   <ul>
-    <li><strong>L'organisateur</strong> : non. Ni par le site, ni par l'API. Il ne voit aucune adresse, aucun bulletin individuel, et les résultats restent masqués tant qu'il y a trop peu de votants (pour l'ensemble, et pour chaque choix ajouté en cours de route).</li>
-    <li><strong>Les autres votants</strong> : non, pour la même raison.</li>
+    <li><strong>L'organisateur et les autres votants</strong> : le site et l'API ne leur montrent aucune adresse ni aucun bulletin individuel, et les résultats restent masqués tant qu'il y a trop peu de votants (pour l'ensemble, et pour chaque choix ajouté en cours de route). Seule déduction possible : la comparaison des résultats en direct décrite plus bas.</li>
     <li><strong>Vos emails</strong> : la confirmation et les avis <strong>ne contiennent aucune note</strong> : ni votre boîte, ni la boîte d'envoi du service ne gardent votre vote. Un avis de nouveau choix vous donne un nouveau lien, qui remplace le précédent.</li>
     <li><strong>Quelqu'un qui obtiendrait un export de la base, même avec la clé</strong> : il pourrait vérifier si une adresse donnée a participé (en recalculant son empreinte). Aucune colonne ne relie l'inscription au bulletin, mais des indices existent : l'ordre des lignes dans un très petit scrutin, et, quand des choix ont été ajoutés en cours de vote, la liste des choix notés par chacun, qui peut désigner un petit groupe de votants (voire un seul) pour un bulletin complémentaire.</li>
     <li><strong>Quelqu'un qui consulte les résultats en direct</strong> : une fois le seuil atteint, comparer les totaux juste avant et juste après un nouveau vote révèle ce vote à qui sait qui vient de voter.</li>
@@ -33,7 +32,7 @@
 
 <div class="card">
   <h2 style="margin-top:0">Votre vote est définitif</h2>
-  <p style="margin:0">Une fois validé, il ne peut être ni modifié ni revu : le site ne vous remontre jamais vos notes, et en scrutin secret elles ne sont pas rattachées à votre inscription. Seuls des choix ajoutés après votre vote peuvent encore être notés, depuis votre lien personnel.</p>
+  <p style="margin:0">Une fois validé, il ne peut être ni modifié ni revu : votre lien de votant ne vous remontre jamais vos notes, et en scrutin secret elles ne sont pas rattachées à votre inscription (en nominatif, seul l'organisateur en voit le détail). Seuls des choix ajoutés après votre vote peuvent encore être notés, depuis votre lien personnel.</p>
 </div>
 
 <div class="card">

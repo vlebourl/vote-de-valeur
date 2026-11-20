@@ -27,7 +27,7 @@ A web app to run **range votes** (*vote de valeur*): every voter rates **every**
 
 ## How ballot secrecy works
 
-In a secret poll, no table links a voter to their ballot, and nothing the organiser can see does either:
+In a secret poll, no table links a voter to their ballot, and the organiser is shown neither addresses nor individual ballots:
 
 - the voter's email (or name) is stored only as an **HMAC**, used to enforce one vote per person. Aliases of the same mailbox count as one (`+tag` suffixes everywhere; dots and `googlemail.com` for Gmail);
 - the magic-link token is stored only as a **SHA-256 hash**, so a database leak gives access to no ballot;
