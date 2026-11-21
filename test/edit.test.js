@@ -5,7 +5,7 @@ import request from 'supertest';
 import pool from '../src/db.js';
 import { hashToken } from '../src/tokens.js';
 import {
-  newApp, organizer, createPoll, requestBallot, submitBallot, ballotForm, lastMail, pathOf, unique, query,
+  newApp, organizer, createPoll, requestBallot, submitBallot, ballotForm, lastMail, pathOf, unique, query, hiddenFields,
 } from './helpers.js';
 
 after(() => pool.end());
@@ -16,13 +16,13 @@ const totals = async (pollId, token) => {
   return { count: r.body.ballotCount, ...Object.fromEntries(r.body.options.map((o) => [o.label, o.total])) };
 };
 
-test('parcours : lien dans la confirmation, bulletin vierge, remplacement complet', async () => {
+test('parcours : lien dans la confirmation, notes pré-remplies, modification', async () => {
   const { agent } = await organizer(app);
   const pollId = await createPoll(agent);
   const email = `${unique('modif')}@test.local`;
   const path = await requestBallot(app, pollId, email);
   const page = await request(app).get(path).expect(200);
-  assert.match(page.text, /Vous pourrez le modifier jusqu'à la clôture/);
+  assert.match(page.text, /Vous pourrez modifier votre vote jusqu'à la clôture/);
   assert.equal((await submitBallot(app, path, { Lyon: 2, Marseille: -1 })).status, 302);
 
   const mail = lastMail(email, 'confirmation');
@@ -38,18 +38,28 @@ test('parcours : lien dans la confirmation, bulletin vierge, remplacement comple
   const dump = JSON.stringify((await query('SELECT * FROM poll_voters WHERE poll_id = $1', [pollId])).rows);
   assert.ok(!dump.includes(key) && !dump.includes(hashToken(key)));
 
-  // Bulletin vierge : les anciennes notes ne sont pas réaffichées.
+  // Notes actuelles pré-remplies : on ne change que ce qu'on veut.
   const edit = await request(app).get(editPath).expect(200);
   assert.match(edit.text, /Modification de votre vote/);
-  assert.match(edit.text, /Remplacer mon vote/);
-  assert.doesNotMatch(edit.text, /value="2" checked|value="-1" checked/);
+  assert.match(edit.text, /Enregistrer les modifications/);
   assert.doesNotMatch(edit.text, /name="notify"/);
+  const checked = Object.fromEntries([...edit.text.matchAll(/name="score_([0-9a-f-]{36})" value="(-?\d)" checked/g)].map((m) => [m[1], m[2]]));
+  const { rows: opts } = await query('SELECT id, label FROM options WHERE poll_id = $1', [pollId]);
+  const byLabel = Object.fromEntries(opts.map((o) => [o.label, checked[o.id]]));
+  assert.deepEqual(byLabel, { Lyon: '2', Marseille: '-1', Bordeaux: '0' });
 
-  const res = await submitBallot(app, editPath, { Lyon: -2, Bordeaux: 1 });
+  // Modification d'une seule note, les autres soumises telles que pré-remplies.
+  const form = { ...hiddenFields(edit.text), ...Object.fromEntries(Object.entries(checked).map(([id, v]) => [`score_${id}`, v])) };
+  form[`score_${opts.find((o) => o.label === 'Bordeaux').id}`] = '1';
+  const res = await request(app).post(editPath).type('form').send(form);
   assert.equal(res.status, 200);
-  assert.match(res.text, /Votre vote a bien été remplacé/);
-  assert.doesNotMatch(res.text, /Lyon|Bordeaux/, "la page ne rappelle pas les notes");
-  assert.deepEqual(await totals(pollId, tokenOf(path)), { count: 1, Lyon: -2, Marseille: 0, Bordeaux: 1 });
+  assert.match(res.text, /Vos modifications ont bien été enregistrées/);
+  assert.doesNotMatch(res.text, /Lyon|Bordeaux/, 'la page de confirmation ne rappelle pas les notes');
+  assert.deepEqual(await totals(pollId, tokenOf(path)), { count: 1, Lyon: 2, Marseille: -1, Bordeaux: 1 });
+
+  // Erreur : les notes saisies sont gardées dans le formulaire réaffiché.
+  const bad = await request(app).post(editPath).type('form').send({ ...form, final_ack: '' }).expect(400);
+  assert.match(bad.text, new RegExp(`name="score_${opts.find((o) => o.label === 'Bordeaux').id}" value="1" checked`));
 
   // Le lien reste valable : nouvelle modification.
   assert.equal((await submitBallot(app, editPath, { Marseille: 2 })).status, 200);

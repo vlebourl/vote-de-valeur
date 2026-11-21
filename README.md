@@ -34,7 +34,7 @@ In a secret poll, no table links a voter to their ballot, and the organiser is s
 - a voter who asks to be notified of new choices has their address kept **encrypted with a server key**, in a table linked to their registration and never to their ballot, erased when the poll closes; the organiser only ever sees counts;
 - to send the vote confirmation, the email is kept **encrypted with a key derived from the voter's own token** (AES-256-GCM, HKDF). The server can only decrypt it when the voter opens their link to vote, then erases it;
 - ballots have **no voter reference and no timestamp**, and the voter's "has voted" date is rounded to the day;
-- emails (confirmation, notices) **never contain any score**: a mailbox, including the sender's *Sent* folder, keeps no vote. A vote can never be reviewed. In email mode it can be changed until closing with the "Modifier mon vote" link of the confirmation: a random key sent only by email, whose hash is stored on the ballot, never on the voter record. The new ballot fully replaces the old one, without showing the previous scores;
+- emails (confirmation, notices) **never contain any score**: a mailbox, including the sender's *Sent* folder, keeps no vote. In email mode, a vote can be reviewed and changed until closing with the "Modifier mon vote" link of the confirmation (current scores pre-filled): a random key sent only by email and not kept by the server; the database stores its hash on the ballot, never on the voter record. The link is the only way back to a ballot;
 - results stay hidden below a minimum number of ballots, for the poll and for each choice added along the way.
 
 The [`/donnees`](src/views/donnees.ejs) page explains all of this to voters.

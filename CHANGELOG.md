@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0 — unreleased
+
+### Changed
+- **Changing a vote is now an edit, not a re-vote.** The "Modifier mon vote" link opens the ballot with the current
+  scores pre-filled; the voter changes only what they want. The link is the only way back to a ballot: the server never
+  keeps its key (only its hash, on the ballot), so whoever holds the link can see and change the vote. Texts (ballot,
+  recap, confirmation email, results page, "Vos données") updated accordingly. On a validation error, typed scores are
+  kept.
+- Deploy only with an email transport that keeps no copy of sent messages (the confirmation now carries a link that
+  reveals the vote).
+
 ## 1.3.0 — 2026-11-20
 
 ### Added

@@ -353,9 +353,9 @@ router.post('/vote/:id/ballot/:token', async (req, res) => {
 
 // --- Modification d'un bulletin, par le lien de l'email de confirmation ---
 // Le lien porte la clé de modification ; la base n'en connaît que l'empreinte,
-// posée sur le bulletin. Le bulletin est remplacé en entier, et les notes
-// précédentes ne sont jamais réaffichées (secret du vote : personne ne peut
-// prouver comment il a voté). Rien n'est écrit sur l'inscription du votant.
+// posée sur le bulletin, et le serveur ne garde pas la clé. Seul le détenteur
+// du lien retrouve donc le bulletin : ses notes actuelles sont pré-remplies et
+// il change celles qu'il veut. Rien n'est écrit sur l'inscription du votant.
 function editUrl(pollId, key) {
   return key ? `${config.baseUrl}/vote/${pollId}/modifier/${key}` : null;
 }
@@ -365,7 +365,7 @@ const EDIT_BALLOT_SQL = `SELECT id, voter_id, is_supplement FROM ballots WHERE p
 // Choix du bulletin encore existants (dans l'ordre du scrutin), sans les notes.
 async function editOptions(ballotId, client = { query }) {
   const { rows } = await client.query(
-    `SELECT o.id, o.label, o.description, o.position, (o.image_data IS NOT NULL) AS has_image
+    `SELECT o.id, o.label, o.description, o.position, (o.image_data IS NOT NULL) AS has_image, s.score
        FROM ballot_scores s JOIN options o ON o.id = s.option_id
       WHERE s.ballot_id = $1 ORDER BY o.position`, [ballotId]
   );
@@ -379,6 +379,7 @@ function renderEdit(res, poll, ballot, key, options, extra = {}) {
     supplement: ballot.is_supplement, editing: true, editable: true,
     canNotify: false, nominative: Boolean(ballot.voter_id),
     shown: signShown(poll, { b: ballot.id }, options),
+    current: Object.fromEntries(options.map((o) => [o.id, o.score])),
     modeChanged: false, error: null,
     ...extra,
   });
@@ -407,7 +408,12 @@ router.post('/vote/:id/modifier/:key', async (req, res) => {
   const again = async (error, status = 400) => {
     const options = await editOptions(ballot.id);
     if (!options.length) return res.status(404).render('error', { message: 'Les choix de ce bulletin ont tous été retirés.' });
-    return renderEdit(res, poll, ballot, key, options, { error, status });
+    // Les notes saisies sont gardées ; à défaut, celles du bulletin.
+    const current = Object.fromEntries(options.map((o) => {
+      const raw = req.body[`score_${o.id}`];
+      return [o.id, typeof raw === 'string' && /^(-2|-1|0|1|2)$/.test(raw) ? Number(raw) : o.score];
+    }));
+    return renderEdit(res, poll, ballot, key, options, { error, status, current });
   };
   const shown = readShown(req.body.shown, poll, { b: ballot.id });
   if (!shown) return again('Ce bulletin a expiré ou a changé : vérifiez vos notes et validez à nouveau.', 409);

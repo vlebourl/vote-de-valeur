@@ -11,7 +11,7 @@
 <% } %>
 <% var sup = (typeof supplement !== 'undefined' && supplement); %>
 <% if (ed) { %>
-  <div class="notice"><strong>Modification de votre vote.</strong> Notez à nouveau <%= options.length > 1 ? 'chaque choix' : 'ce choix' %> : <%= sup ? 'ces notes remplaceront' : 'ce bulletin remplacera' %> entièrement <%= sup ? 'les précédentes' : 'le précédent' %>. Pour préserver le secret du vote, vos anciennes notes ne sont pas affichées.</div>
+  <div class="notice"><strong>Modification de votre vote.</strong> Vos notes actuelles sont cochées ci-dessous : changez celles que vous voulez, puis enregistrez. Les autres restent telles quelles.</div>
 <% } else if (sup) { %>
   <div class="notice">Vous avez déjà voté. <strong><%= options.length > 1 ? 'Ces choix ont été ajoutés' : 'Ce choix a été ajouté' %> depuis votre vote</strong> : notez-<%= options.length > 1 ? 'les' : 'le' %> ci-dessous. Vos notes précédentes restent inchangées.</div>
 <% } else { %>
@@ -35,7 +35,7 @@
       <div class="rating">
         <% [-2,-1,0,1,2].forEach(function (v) {
              var id = 'opt_' + o.id + '_' + (v<0 ? 'm'+(-v) : v); %>
-          <input type="radio" id="<%= id %>" name="score_<%= o.id %>" value="<%= v %>" <%= v===0 ? 'checked' : '' %>>
+          <input type="radio" id="<%= id %>" name="score_<%= o.id %>" value="<%= v %>" <%= ((typeof current !== 'undefined' && current && current[o.id] !== undefined) ? current[o.id] === v : v === 0) ? 'checked' : '' %>>
           <label for="<%= id %>" class="rate rate<%= v %>"><%= v>0 ? '+'+v : v %></label>
         <% }) %>
       </div>
@@ -50,11 +50,10 @@
   <% } %>
   <div class="final-warning">
     <% if (canEdit) { %>
-    <p style="margin:0 0 8px"><strong>Vous ne pourrez pas revoir <%= sup ? 'ces notes' : 'votre vote' %>.</strong>
-      Vous pourrez <%= ed ? 'encore ' : '' %><%= sup ? 'les' : 'le' %> modifier jusqu'à la clôture, en le remplaçant entièrement, avec le lien « Modifier mon vote » de l'email de confirmation<% if (nomi) { %> ; l'organisateur verra vos notes (scrutin nominatif), mais ni votre lien ni l'email ne vous les remontreront.<% } else { %> : pour préserver le secret du vote, vos notes ne sont pas rattachées à votre inscription et ne figurent dans aucun email.<% } %></p>
+    <p style="margin:0 0 8px"><strong><%= ed ? 'Vous pourrez encore modifier vos notes' : 'Vous pourrez modifier ' + (sup ? 'ces notes' : 'votre vote') %> jusqu'à la clôture</strong>, avec le lien « Modifier mon vote » de l'email de confirmation. Ce lien affiche vos notes : gardez-le pour vous<% if (nomi) { %>. L'organisateur voit vos notes (scrutin nominatif).<% } else { %>. Il est le seul moyen de les retrouver : vos notes ne sont pas rattachées à votre inscription, ne figurent dans aucun email, et le serveur ne garde pas la clé du lien.<% } %></p>
     <div class="checkbox-row">
       <input type="checkbox" id="final_ack" name="final_ack" required>
-      <label for="final_ack">J'ai vérifié mes notes et compris que je ne pourrai pas les revoir.</label>
+      <label for="final_ack">J'ai vérifié mes notes.</label>
     </div>
     <% } else { %>
     <p style="margin:0 0 8px"><strong><%= sup ? 'Ces notes sont définitives.' : 'Votre vote est définitif.' %></strong>
@@ -65,12 +64,12 @@
     </div>
     <% } %>
   </div>
-  <button class="btn" type="submit"><%= ed ? 'Remplacer mon vote' : sup ? 'Valider ces notes' : 'Valider mon vote' %></button>
+  <button class="btn" type="submit"><%= ed ? 'Enregistrer les modifications' : sup ? 'Valider ces notes' : 'Valider mon vote' %></button>
 </form>
 
 <dialog id="ballot-recap" class="recap">
-  <h2 style="margin-top:0">Confirmer <%= sup ? 'ces notes' : 'votre vote' %></h2>
-  <p class="muted" style="margin-top:0">Dernière vérification : après validation, vous ne pourrez plus revoir ces notes<%= canEdit ? '' : ', ni les modifier' %>.</p>
+  <h2 style="margin-top:0"><%= ed ? 'Confirmer les modifications' : 'Confirmer ' + (sup ? 'ces notes' : 'votre vote') %></h2>
+  <p class="muted" style="margin-top:0"><%= canEdit ? 'Dernière vérification avant d\'enregistrer. Vous pourrez encore modifier ces notes jusqu\'à la clôture.' : 'Dernière vérification : après validation, vous ne pourrez ni modifier ni revoir ces notes.' %></p>
   <ul id="recap-list"></ul>
   <div class="row-actions">
     <button type="button" class="btn" id="recap-ok">Je confirme</button>

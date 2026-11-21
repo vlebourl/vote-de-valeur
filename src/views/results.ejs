@@ -2,7 +2,7 @@
 <% var jv = (typeof justVoted !== 'undefined' && justVoted);
    var pl = (typeof permalink !== 'undefined' && permalink) ? permalink : ''; %>
 <h1 style="margin-bottom:4px"><%= poll.title %></h1>
-<% if (jv) { %><div class="notice">Votre vote a bien été enregistré. Merci !<% if (poll.auth_mode === 'email') { %> Un email de confirmation vous a été envoyé ; il contient aussi un lien pour modifier votre vote jusqu'à la clôture.<% } %></div><% } %>
+<% if (jv) { %><div class="notice">Votre vote a bien été enregistré. Merci !<% if (poll.auth_mode === 'email') { %> Un email de confirmation vous a été envoyé ; il contient aussi un lien pour revoir et modifier votre vote jusqu'à la clôture.<% } %></div><% } %>
 <% if (typeof justSupplemented !== 'undefined' && justSupplemented) { %><div class="notice">Vos notes pour les nouveaux choix ont bien été enregistrées. Merci !</div><% } %>
 <% if (typeof newOptions !== 'undefined' && newOptions.length) { %>
   <div class="card" style="border:2px solid var(--indigo)">
@@ -12,7 +12,7 @@
   </div>
 <% } %>
 <% if (!jv && poll.auth_mode === 'email' && !(typeof closed !== 'undefined' && closed)) { %>
-  <p class="field-hint">Pour modifier votre vote, utilisez le lien « Modifier mon vote » de votre email de confirmation (votes déposés à partir de la version 1.3).</p>
+  <p class="field-hint">Pour revoir ou modifier votre vote, utilisez le lien « Modifier mon vote » de votre email de confirmation (votes déposés à partir de la version 1.3).</p>
 <% } %>
 
 <div class="card">
